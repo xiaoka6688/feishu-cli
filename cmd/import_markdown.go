@@ -79,24 +79,36 @@ var importMarkdownCmd = &cobra.Command{
 			return fmt.Errorf("转换 Markdown 失败: %w", err)
 		}
 
-		// Add blocks to document
+		// Add blocks to document in batches (飞书 API 限制每次最多 50 个块)
+		const batchSize = 50
+		var totalCreated int
+
 		if len(blocks) > 0 {
-			createdBlocks, err := client.CreateBlock(documentID, documentID, blocks, -1)
-			if err != nil {
-				return fmt.Errorf("添加内容失败: %w", err)
+			for i := 0; i < len(blocks); i += batchSize {
+				end := i + batchSize
+				if end > len(blocks) {
+					end = len(blocks)
+				}
+				batch := blocks[i:end]
+
+				createdBlocks, err := client.CreateBlock(documentID, documentID, batch, -1)
+				if err != nil {
+					return fmt.Errorf("添加内容失败 (块 %d-%d): %w", i, end-1, err)
+				}
+				totalCreated += len(createdBlocks)
 			}
 
 			output, _ := cmd.Flags().GetString("output")
 			if output == "json" {
 				data, _ := json.MarshalIndent(map[string]interface{}{
 					"document_id": documentID,
-					"blocks":      len(createdBlocks),
+					"blocks":      totalCreated,
 				}, "", "  ")
 				fmt.Println(string(data))
 			} else {
 				fmt.Printf("导入成功!\n")
 				fmt.Printf("  文档ID: %s\n", documentID)
-				fmt.Printf("  添加块数: %d\n", len(createdBlocks))
+				fmt.Printf("  添加块数: %d\n", totalCreated)
 				fmt.Printf("  链接: https://feishu.cn/docx/%s\n", documentID)
 			}
 		}

@@ -409,16 +409,25 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 			text := c.getNodeText(child)
 			url := string(child.Destination)
 			if text != "" {
-				elements = append(elements, &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{
-						Content: &text,
-						TextElementStyle: &larkdocx.TextElementStyle{
-							Link: &larkdocx.Link{
-								Url: &url,
+				// 飞书不支持页内锚点链接（以 # 开头），将其转换为普通文本
+				if strings.HasPrefix(url, "#") {
+					elements = append(elements, &larkdocx.TextElement{
+						TextRun: &larkdocx.TextRun{
+							Content: &text,
+						},
+					})
+				} else {
+					elements = append(elements, &larkdocx.TextElement{
+						TextRun: &larkdocx.TextRun{
+							Content: &text,
+							TextElementStyle: &larkdocx.TextElementStyle{
+								Link: &larkdocx.Link{
+									Url: &url,
+								},
 							},
 						},
-					},
-				})
+					})
+				}
 			}
 			return ast.WalkSkipChildren, nil
 		}
@@ -682,16 +691,25 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 			text := c.getNodeText(child)
 			url := string(child.Destination)
 			if text != "" {
-				elements = append(elements, &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{
-						Content: &text,
-						TextElementStyle: &larkdocx.TextElementStyle{
-							Link: &larkdocx.Link{
-								Url: &url,
+				// 飞书不支持页内锚点链接（以 # 开头），将其转换为普通文本
+				if strings.HasPrefix(url, "#") {
+					elements = append(elements, &larkdocx.TextElement{
+						TextRun: &larkdocx.TextRun{
+							Content: &text,
+						},
+					})
+				} else {
+					elements = append(elements, &larkdocx.TextElement{
+						TextRun: &larkdocx.TextRun{
+							Content: &text,
+							TextElementStyle: &larkdocx.TextElementStyle{
+								Link: &larkdocx.Link{
+									Url: &url,
+								},
 							},
 						},
-					},
-				})
+					})
+				}
 			}
 			return ast.WalkSkipChildren, nil
 		}
