@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -35,22 +34,55 @@ type segment struct {
 }
 
 // parseMarkdownSegments 将 Markdown 解析为片段，分离出 mermaid 和 plantuml 代码块
+// countLeadingBackticks 返回行首反引号数量（去除前导空格后）
+func countLeadingBackticks(line string) int {
+	trimmed := strings.TrimSpace(line)
+	count := 0
+	for _, ch := range trimmed {
+		if ch == '`' {
+			count++
+		} else {
+			break
+		}
+	}
+	return count
+}
+
 func parseMarkdownSegments(markdown string) []segment {
 	var segments []segment
 	lines := strings.Split(markdown, "\n")
 	var buf []string
 	i := 0
 
+	// 跟踪外层代码围栏状态，避免将嵌套代码围栏内的 ```mermaid 误识别
+	inFence := false
+	fenceBackticks := 0
+
 	for i < len(lines) {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
+		backticks := countLeadingBackticks(line)
 
-		// 检查是否是图表代码块开始（mermaid / plantuml / puml）
+		// 如果当前在外层代码围栏内，检查是否到达围栏结束
+		if inFence {
+			if backticks >= fenceBackticks && strings.TrimSpace(strings.TrimLeft(trimmed, "`")) == "" {
+				// 围栏结束（只有反引号，没有其他内容）
+				inFence = false
+				fenceBackticks = 0
+			}
+			buf = append(buf, line)
+			i++
+			continue
+		}
+
+		// 不在围栏内：检查是否是图表代码块开始（恰好 3 个反引号 + mermaid/plantuml/puml）
 		var diagramKind string
-		if strings.HasPrefix(trimmed, "```mermaid") {
-			diagramKind = "mermaid"
-		} else if strings.HasPrefix(trimmed, "```plantuml") || strings.HasPrefix(trimmed, "```puml") {
-			diagramKind = "plantuml"
+		if backticks == 3 {
+			if strings.HasPrefix(trimmed, "```mermaid") {
+				diagramKind = "mermaid"
+			} else if strings.HasPrefix(trimmed, "```plantuml") || strings.HasPrefix(trimmed, "```puml") {
+				diagramKind = "plantuml"
+			}
 		}
 
 		if diagramKind != "" {
@@ -76,6 +108,15 @@ func parseMarkdownSegments(markdown string) []segment {
 				segments = append(segments, segment{kind: diagramKind, content: strings.Join(diagramLines, "\n")})
 			}
 		} else {
+			// 检查是否进入非图表代码围栏（4+ 反引号，或 3 反引号 + 非图表语言）
+			if backticks >= 4 {
+				inFence = true
+				fenceBackticks = backticks
+			} else if backticks == 3 && trimmed != "```" {
+				// 3 反引号 + 语言标识（非图表），进入普通代码围栏
+				inFence = true
+				fenceBackticks = 3
+			}
 			buf = append(buf, line)
 			i++
 		}
@@ -98,11 +139,39 @@ func diagramSyntaxLabel(syntax string) string {
 }
 
 // countDiagramBlocks 统计图表代码块数量（Mermaid + PlantUML）
+// 使用与 parseMarkdownSegments 相同的嵌套围栏逻辑，避免将示例代码块中的图表标记误计
 func countDiagramBlocks(markdown string) (mermaidCount, plantumlCount int) {
-	reMermaid := regexp.MustCompile("(?m)^```mermaid")
-	mermaidCount = len(reMermaid.FindAllString(markdown, -1))
-	rePlantuml := regexp.MustCompile("(?m)^```(?:plantuml|puml)")
-	plantumlCount = len(rePlantuml.FindAllString(markdown, -1))
+	lines := strings.Split(markdown, "\n")
+	inFence := false
+	fenceBackticks := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		backticks := countLeadingBackticks(line)
+
+		if inFence {
+			if backticks >= fenceBackticks && strings.TrimSpace(strings.TrimLeft(trimmed, "`")) == "" {
+				inFence = false
+				fenceBackticks = 0
+			}
+			continue
+		}
+
+		if backticks == 3 {
+			if strings.HasPrefix(trimmed, "```mermaid") {
+				mermaidCount++
+			} else if strings.HasPrefix(trimmed, "```plantuml") || strings.HasPrefix(trimmed, "```puml") {
+				plantumlCount++
+			} else if trimmed != "```" {
+				// 非图表的 3 反引号代码块
+				inFence = true
+				fenceBackticks = 3
+			}
+		} else if backticks >= 4 {
+			inFence = true
+			fenceBackticks = backticks
+		}
+	}
 	return
 }
 
