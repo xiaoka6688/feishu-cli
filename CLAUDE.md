@@ -69,6 +69,11 @@ go vet ./...                      # 静态检查
 3. **代码注释**: 关键逻辑使用中文注释
 4. **提交信息**: 遵循 Conventional Commits 规范
 5. **指针解引用**: 使用 `helpers.go` 中的 `StringVal/BoolVal/IntVal` 等工具函数
+6. **隐私安全（开源项目，必须遵守）**:
+   - 代码、文档、技能文件中**禁止出现任何真实的个人邮箱、密码、Token、密钥**
+   - 示例邮箱统一使用 `user@example.com`，示例 Token 使用 `cli_xxx`、`u-xxx` 等占位符
+   - 新增或修改文件前，检查是否包含 `@bytedance.com`、`@lark.com` 等内部邮箱域名
+   - `.env`、`config.yaml` 等含敏感信息的文件已在 `.gitignore` 中排除，禁止提交
 
 ### 配置方式
 
