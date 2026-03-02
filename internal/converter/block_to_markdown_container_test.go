@@ -1334,6 +1334,49 @@ func TestConvertAddOns(t *testing.T) {
 			},
 			want: "First child\nSecond child",
 		},
+		{
+			name: "addons with textdrawing record",
+			blocks: []*larkdocx.Block{
+				{
+					BlockId:   strPtr("addons1"),
+					BlockType: intPtr(int(BlockTypeAddOns)),
+					AddOns: &larkdocx.AddOns{
+						ComponentTypeId: strPtr(ISVTypeTextDrawing),
+						Record:          strPtr(`{"data":"flowchart LR\nA-->B","view":"chart","theme":"default"}`),
+					},
+				},
+			},
+			want: "```mermaid\nflowchart LR\nA-->B\n```",
+		},
+		{
+			name: "addons with plantuml record",
+			blocks: []*larkdocx.Block{
+				{
+					BlockId:   strPtr("addons2"),
+					BlockType: intPtr(int(BlockTypeAddOns)),
+					AddOns: &larkdocx.AddOns{
+						ComponentTypeId: strPtr(ISVTypeTextDrawing),
+						Record:          strPtr(`{"data":"@startuml\nAlice -> Bob: Hi\n@enduml","view":"plantuml","theme":"default"}`),
+					},
+				},
+			},
+			want: "```plantuml\n@startuml\nAlice -> Bob: Hi\n@enduml\n```",
+		},
+		{
+			name: "addons with invalid record json",
+			blocks: []*larkdocx.Block{
+				{
+					BlockId:   strPtr("addons3"),
+					BlockType: intPtr(int(BlockTypeAddOns)),
+					AddOns: &larkdocx.AddOns{
+						ComponentTypeId: strPtr(ISVTypeTextDrawing),
+						ComponentId:     strPtr("cmp_invalid"),
+						Record:          strPtr(`{"data":"foo"`),
+					},
+				},
+			},
+			want: "[文本绘图组件 (cmp_invalid) 源码解析失败]",
+		},
 	}
 
 	for _, tt := range tests {

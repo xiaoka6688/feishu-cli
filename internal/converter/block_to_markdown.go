@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -280,7 +281,15 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 		// GridColumn 块由 Grid 块处理，跳过独立处理
 		return "", nil
 	case BlockTypeAddOns:
-		// AddOns/SyncedBlock 展开子块内容
+		// 优先解析小组件内置内容（例如文本绘图的 Mermaid 源码）
+		if block.AddOns != nil {
+			text, _ := c.convertAddOns(block)
+			if text != "" {
+				return text, nil
+			}
+		}
+
+		// 回退逻辑：如无可解析小组件内容，按历史行为递归展开子块
 		if block.Children != nil {
 			var sb strings.Builder
 			for _, childID := range block.Children {
@@ -437,6 +446,75 @@ func (c *BlockToMarkdown) convertText(block *larkdocx.Block) (string, error) {
 		return "", nil
 	}
 	return c.convertTextElements(block.Text.Elements) + "\n", nil
+}
+
+func (c *BlockToMarkdown) convertAddOns(block *larkdocx.Block) (string, error) {
+	if block.AddOns == nil {
+		return "", nil
+	}
+
+	typeID := ""
+	if block.AddOns.ComponentTypeId != nil {
+		typeID = *block.AddOns.ComponentTypeId
+	}
+
+	componentID := ""
+	if block.AddOns.ComponentId != nil {
+		componentID = *block.AddOns.ComponentId
+	}
+
+	if block.AddOns.Record != nil {
+		var record struct {
+			Data  string `json:"data"`
+			View  string `json:"view"`
+			Theme string `json:"theme"`
+		}
+
+		raw := strings.TrimSpace(*block.AddOns.Record)
+		if raw != "" {
+			if err := json.Unmarshal([]byte(raw), &record); err != nil {
+				return fmt.Sprintf("[文本绘图组件 (%s) 源码解析失败]\n", componentID), nil
+			}
+			source := strings.TrimSpace(record.Data)
+			if source != "" {
+				lang := detectAddonDiagramLanguage(record.View, source)
+				return fmt.Sprintf("```%s\n%s\n```\n", lang, source), nil
+			}
+		}
+	}
+
+	if typeID == ISVTypeTextDrawing {
+		return fmt.Sprintf("[文本绘图组件 (component: %s)]\n", componentID), nil
+	}
+
+	if componentID != "" {
+		return fmt.Sprintf("[小组件 (type: %s, component: %s)]\n", typeID, componentID), nil
+	}
+
+	if typeID != "" {
+		return fmt.Sprintf("[小组件 (type: %s)]\n", typeID), nil
+	}
+
+	return "", nil
+}
+
+func detectAddonDiagramLanguage(view string, source string) string {
+	normalized := strings.ToLower(strings.TrimSpace(view))
+	src := strings.TrimSpace(source)
+
+	if normalized == "" {
+		if strings.HasPrefix(src, "@startuml") || strings.Contains(src, "@startuml") {
+			return "plantuml"
+		}
+		return "mermaid"
+	}
+
+	if normalized == "plantuml" || strings.Contains(normalized, "plantuml") {
+		return "plantuml"
+	}
+
+	// 典型飞书绘图 view 多为 mermaid 风格语法，统一归一为 mermaid
+	return "mermaid"
 }
 
 // getHeadingTextAndStyle 从 heading 块中提取 elements 和 TextStyle
