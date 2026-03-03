@@ -850,7 +850,7 @@ func (c *MarkdownToBlock) convertCallout(node *ast.Blockquote, calloutType strin
 		switch n := child.(type) {
 		case *ast.Paragraph:
 			elements := c.extractTextElements(n)
-			if len(elements) > 0 {
+			if len(elements) > 0 && hasNonEmptyContent(elements) {
 				textBlockType := int(BlockTypeText)
 				children = append(children, &BlockNode{
 					Block: &larkdocx.Block{

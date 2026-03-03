@@ -555,7 +555,56 @@ func phase1CreateBlocks(
 			for idx, children := range nodeChildrenMap {
 				if idx < len(createdBlockIDs) {
 					parentID := createdBlockIDs[idx]
+
 					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
+
+					// Callout 块：飞书 API 创建 Callout 时会自动生成一个空文本子块（位于 index 0），
+					// 在实际子块创建完成后将其删除，否则 Callout 中会多出一个空行
+					if idx < len(result.BlockNodes) {
+						node := result.BlockNodes[idx]
+						if node.Block.BlockType != nil && *node.Block.BlockType == int(converter.BlockTypeCallout) {
+							// 防御性检查：先获取子块列表，确认 index 0 确实是空文本块再删除
+							shouldDelete := false
+							childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+								blocks, err := client.GetBlockChildren(documentID, parentID)
+								return blocks, nil, err
+							}, client.RetryConfig{
+								MaxRetries:       3,
+								RetryOnRateLimit: true,
+							})
+							if childrenResult.Err == nil && len(childrenResult.Value) > 0 {
+								firstChild := childrenResult.Value[0]
+								if firstChild.BlockType != nil && *firstChild.BlockType == int(converter.BlockTypeText) {
+									// 检查是否为空文本块（无 elements 或所有 TextRun 内容为空）
+									isEmpty := true
+									if firstChild.Text != nil && len(firstChild.Text.Elements) > 0 {
+										for _, elem := range firstChild.Text.Elements {
+											if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
+												isEmpty = false
+												break
+											}
+										}
+									}
+									shouldDelete = isEmpty
+								}
+							} else if childrenResult.Err != nil && verbose {
+								syncPrintf("  ⚠ Callout 子块查询失败 (parent=%s): %v\n", parentID, childrenResult.Err)
+							}
+
+							if shouldDelete {
+								delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
+									err := client.DeleteBlocks(documentID, parentID, 0, 1)
+									return struct{}{}, nil, err
+								}, client.RetryConfig{
+									MaxRetries:       5,
+									RetryOnRateLimit: true,
+								})
+								if delResult.Err != nil {
+									fmt.Fprintf(os.Stderr, "  ⚠ Callout 空子块删除失败 (parent=%s): %v\n", parentID, delResult.Err)
+								}
+							}
+						}
+					}
 					if nestedErr != nil {
 						if verbose {
 							syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)

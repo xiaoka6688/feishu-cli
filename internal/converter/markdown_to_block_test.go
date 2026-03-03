@@ -497,6 +497,47 @@ func TestConvert_Callout(t *testing.T) {
 	}
 }
 
+func TestConvert_CalloutNoLeadingEmptyBlock(t *testing.T) {
+	// Regression test: Callout should not have an empty text block as its first child.
+	// The bug was that convertCallout() checked hasNonEmptyContent() for the first paragraph
+	// and the default branch, but NOT for subsequent ast.Paragraph nodes (line 853).
+	tests := []struct {
+		name     string
+		markdown string
+	}{
+		{"IMPORTANT single line", "> [!IMPORTANT]\n> 仅修复路径1不足以解决问题。"},
+		{"NOTE single line", "> [!NOTE]\n> 这是一个提示信息。"},
+		{"WARNING multiline", "> [!WARNING]\n> 第一行警告\n> 第二行警告"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			converter := NewMarkdownToBlock([]byte(tt.markdown), ConvertOptions{}, "")
+			result, err := converter.ConvertWithTableData()
+			if err != nil {
+				t.Fatalf("ConvertWithTableData() error: %v", err)
+			}
+			if len(result.BlockNodes) == 0 {
+				t.Fatal("BlockNodes is empty")
+			}
+
+			calloutNode := result.BlockNodes[0]
+			if calloutNode.Block.BlockType == nil || *calloutNode.Block.BlockType != int(BlockTypeCallout) {
+				t.Skipf("Parsed as type %v, not Callout", calloutNode.Block.BlockType)
+			}
+
+			for i, child := range calloutNode.Children {
+				if child.Block != nil && child.Block.Text != nil {
+					elements := child.Block.Text.Elements
+					if !hasNonEmptyContent(elements) {
+						t.Errorf("Child[%d] is an empty text block — should have been filtered out", i)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestConvert_MixedContent(t *testing.T) {
 	markdown := `# 标题
 

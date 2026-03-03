@@ -107,24 +107,45 @@ var addCalloutCmd = &cobra.Command{
 			calloutBlockID = *createdBlocks[0].BlockId
 		}
 
-		// 在 callout 块内添加文本内容
-		textBlockType := 2 // Text
-		textBlock := &larkdocx.Block{
-			BlockType: &textBlockType,
-			Text: &larkdocx.Text{
-				Elements: []*larkdocx.TextElement{
-					{
-						TextRun: &larkdocx.TextRun{
-							Content: &content,
+		// 飞书 API 创建 Callout 时会自动生成一个空的子文本块，
+		// 直接更新该子块的内容，避免产生多余的空行。
+		children, err := client.GetBlockChildren(documentID, calloutBlockID)
+		if err != nil {
+			return fmt.Errorf("获取高亮块子块失败: %w", err)
+		}
+
+		if len(children) > 0 && children[0].BlockId != nil {
+			// 更新自动生成的空子块内容
+			updateContent := map[string]any{
+				"update_text_elements": map[string]any{
+					"elements": []map[string]any{
+						{"text_run": map[string]any{"content": content}},
+					},
+				},
+			}
+			err = client.UpdateBlock(documentID, *children[0].BlockId, updateContent)
+			if err != nil {
+				return fmt.Errorf("更新高亮块内容失败: %w", err)
+			}
+		} else {
+			// 兜底：如果没有自动生成子块，手动创建
+			textBlockType := 2 // Text
+			textBlock := &larkdocx.Block{
+				BlockType: &textBlockType,
+				Text: &larkdocx.Text{
+					Elements: []*larkdocx.TextElement{
+						{
+							TextRun: &larkdocx.TextRun{
+								Content: &content,
+							},
 						},
 					},
 				},
-			},
-		}
-
-		_, err = client.CreateBlock(documentID, calloutBlockID, []*larkdocx.Block{textBlock}, 0)
-		if err != nil {
-			return fmt.Errorf("添加高亮块内容失败: %w", err)
+			}
+			_, err = client.CreateBlock(documentID, calloutBlockID, []*larkdocx.Block{textBlock}, 0)
+			if err != nil {
+				return fmt.Errorf("添加高亮块内容失败: %w", err)
+			}
 		}
 
 		if output == "json" {
