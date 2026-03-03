@@ -283,13 +283,16 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 	case BlockTypeAddOns:
 		// 优先解析小组件内置内容（例如文本绘图的 Mermaid 源码）
 		if block.AddOns != nil {
-			text, _ := c.convertAddOns(block)
-			if text != "" {
+			text, err := c.convertAddOns(block)
+			if err != nil {
+				// JSON 解析失败时打日志，回退到子块展开
+				fmt.Fprintf(os.Stderr, "警告: %v，回退到子块展开\n", err)
+			} else if text != "" {
 				return text, nil
 			}
 		}
 
-		// 回退逻辑：如无可解析小组件内容，按历史行为递归展开子块
+		// 回退逻辑：如无可解析小组件内容或解析失败，按历史行为递归展开子块
 		if block.Children != nil {
 			var sb strings.Builder
 			for _, childID := range block.Children {
@@ -473,7 +476,7 @@ func (c *BlockToMarkdown) convertAddOns(block *larkdocx.Block) (string, error) {
 		raw := strings.TrimSpace(*block.AddOns.Record)
 		if raw != "" {
 			if err := json.Unmarshal([]byte(raw), &record); err != nil {
-				return fmt.Sprintf("[文本绘图组件 (%s) 源码解析失败]\n", componentID), nil
+				return fmt.Sprintf("[文本绘图组件 (%s) 源码解析失败]\n", componentID), fmt.Errorf("AddOns Record JSON 解析失败 (component: %s): %w", componentID, err)
 			}
 			source := strings.TrimSpace(record.Data)
 			if source != "" {
@@ -503,13 +506,14 @@ func detectAddonDiagramLanguage(view string, source string) string {
 	src := strings.TrimSpace(source)
 
 	if normalized == "" {
-		if strings.HasPrefix(src, "@startuml") || strings.Contains(src, "@startuml") {
+		// HasPrefix 是 Contains 的子集，直接用 Contains 即可
+		if strings.Contains(src, "@startuml") {
 			return "plantuml"
 		}
 		return "mermaid"
 	}
 
-	if normalized == "plantuml" || strings.Contains(normalized, "plantuml") {
+	if strings.Contains(normalized, "plantuml") {
 		return "plantuml"
 	}
 
@@ -1118,7 +1122,9 @@ func (c *BlockToMarkdown) convertISV(block *larkdocx.Block) (string, error) {
 
 	switch typeID {
 	case ISVTypeTextDrawing:
-		// TextDrawing 是 Mermaid 绘图块，Open API 不暴露源码
+		// ISV (block_type=28) 的 TextDrawing 不含 Record 字段，Open API 不暴露源码。
+		// 与 AddOns (block_type=40) 不同：AddOns 的 Record 字段包含完整的 Mermaid/PlantUML
+		// 源码（JSON 格式 {"data":"...","view":"..."}），可直接提取还原为代码块。
 		return fmt.Sprintf("```mermaid\n%%%% Feishu TextDrawing (component: %s)\n%%%% Mermaid source code is not accessible via Open API\n```\n", componentID), nil
 	case ISVTypeTimeline:
 		// Timeline 是时间线块，Open API 不暴露源数据
