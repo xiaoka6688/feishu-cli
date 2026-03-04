@@ -524,29 +524,117 @@ feishu-cli dept children <department_id>
 
 在飞书开放平台为你的应用添加以下权限：
 
-| 功能 | 所需权限 | 说明 |
-|------|---------|------|
-| 文档操作 | `docx:document` | 文档读写 |
-| 知识库 | `wiki:wiki:readonly` | 知识库读取 |
-| 知识库成员 | `wiki:wiki` | 空间成员管理 |
-| 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理 |
-| 素材管理 | `drive:drive` | 上传下载 |
-| 评论 | `drive:drive.comment:write` | 评论读写 |
-| 权限管理 | `drive:permission:member:create` | 添加协作者 |
-| 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
-| 消息增强 | `im:message`, `im:message:send_as_bot` | Pin/Reaction/转发 |
-| 群聊搜索 | `im:chat:readonly` | 搜索群聊 |
-| 群聊管理 | `im:chat`, `im:chat:readonly` | 群聊 CRUD |
-| 群成员管理 | `im:chat:member` | 群成员操作 |
-| 会话历史 | `im:message:readonly` | 获取历史消息 |
-| 用户信息 | `contact:user.base:readonly` | 获取用户信息 |
-| 通讯录 | `contact:user.base:readonly`, `contact:department.base:readonly` | 用户搜索/部门查询 |
-| 画板 | `board:board` | 画板读写 |
-| 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
-| 日历 | `calendar:calendar:readonly`, `calendar:calendar` | 需单独申请 |
-| 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
-| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
-| 搜索 | 需要 User Access Token | 用户授权 |
+| 功能 | 所需权限 | 说明              |
+|------|---------|-----------------|
+| 文档操作 | `docx:document` | 文档读写            |
+| 知识库 | `wiki:wiki:readonly` | 知识库读取           |
+| 知识库成员 | `wiki:member` | 空间成员管理          |
+| 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理            |
+| 素材管理 | `subscriptions:image` | 上传下载            |
+| 评论 | `docs:document.comment` | 评论读写            |
+| 权限管理 | `docs:permission.member:create` | 添加协作者           |
+| 消息 | `im:message`, `im:message:send_as_bot` | 发送消息            |
+| 消息增强 | `im:message.pins`, `im:message.reactions` | Pin/Reaction/转发 |
+| 群聊管理 | `im:chat` | 群聊 CRUD         |
+| 群成员管理 | `im:chat.members` | 群成员操作           |
+| 会话历史 | `im:message:readonly` | 获取历史消息          |
+| 用户信息 | `contact:user.base:readonly` | 获取用户信息          |
+| 通讯录 | `contact:user.base:readonly`, `directory:department:search` | 获取通讯录/部门查询      |
+| 画板 | `board:whiteboard` | 画板读写            |
+| 电子表格 | `sheets:spreadsheet` | 电子表格读写          |
+| 日历 | `calendar:calendarr` | 需单独申请           |
+| 任务 | `task:task:read`, `task:task:write` | 需单独申请           |
+| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理          |
+| 搜索 | 需要 User Access Token | 用户授权            |
+
+### 权限快捷导入（不包括最后一项搜索）
+```json
+{
+  "scopes": {
+    "tenant": [
+      "board:whiteboard:node:delete",
+      "calendar:calendar.acl:create",
+      "calendar:calendar.acl:delete",
+      "calendar:calendar.acl:read",
+      "calendar:calendar.event:create",
+      "calendar:calendar.event:delete",
+      "calendar:calendar.event:read",
+      "calendar:calendar.event:reply",
+      "calendar:calendar.event:update",
+      "calendar:calendar:create",
+      "calendar:calendar:delete",
+      "calendar:calendar:read",
+      "calendar:calendar:subscribe",
+      "calendar:calendar:update",
+      "contact:contact.base:readonly",
+      "contact:user.base:readonly",
+      "subscriptions:image",
+      "task:task:read",
+      "task:task:write",
+      "task:tasklist:write",
+      "board:whiteboard:node:create",
+      "board:whiteboard:node:read",
+      "board:whiteboard:node:update",
+      "calendar:calendar.free_busy:read",
+      "im:chat.announcement:read",
+      "im:chat.announcement:write_only",
+      "im:chat.chat_pins:read",
+      "im:chat.chat_pins:write_only",
+      "im:chat.collab_plugins:read",
+      "im:chat.collab_plugins:write_only",
+      "im:chat.managers:write_only",
+      "im:chat.members:bot_access",
+      "im:chat.members:read",
+      "im:chat.members:write_only",
+      "im:chat.menu_tree:read",
+      "im:chat.menu_tree:write_only",
+      "im:chat.moderation:read",
+      "im:chat.tabs:read",
+      "im:chat.tabs:write_only",
+      "im:chat.top_notice:write_only",
+      "im:chat.widgets:read",
+      "im:chat.widgets:write_only",
+      "im:chat:create",
+      "im:chat:delete",
+      "im:chat:moderation:write_only",
+      "im:chat:operate_as_owner",
+      "im:chat:read",
+      "im:chat:update",
+      "im:message:readonly",
+      "sheets:spreadsheet.meta:read",
+      "sheets:spreadsheet.meta:write_only",
+      "sheets:spreadsheet:create",
+      "sheets:spreadsheet:read",
+      "sheets:spreadsheet:write_only",
+      "task:tasklist:read",
+      "docs:document.comment:create",
+      "docs:document.comment:update",
+      "docx:document.block:convert",
+      "docx:document:write_only",
+      "drive:drive:version",
+      "wiki:member:create",
+      "wiki:member:retrieve",
+      "wiki:member:update",
+      "docs:document.comment:read",
+      "docs:document.comment:write_only",
+      "docs:permission.member:create",
+      "docx:document:create",
+      "docx:document:readonly",
+      "drive:drive.metadata:readonly",
+      "drive:drive.search:readonly",
+      "drive:drive:version:readonly",
+      "im:message",
+      "im:message.pins:read",
+      "im:message.pins:write_only",
+      "im:message.reactions:read",
+      "im:message.reactions:write_only",
+      "im:message:send_as_bot",
+      "wiki:wiki:readonly"
+    ],
+    "user": []
+  }
+}
+```
 
 ## 技术栈
 
