@@ -1,7 +1,9 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larksearch "github.com/larksuite/oapi-sdk-go/v3/service/search/v2"
@@ -159,40 +161,54 @@ func SearchApps(opts SearchAppsOptions, userAccessToken string) (*SearchAppsResu
 
 // SearchDocWikiOptions 搜索文档和 Wiki 的选项
 type SearchDocWikiOptions struct {
-	Query        string   // 搜索关键词
-	DocTypes     []string // 文档类型（doc/sheet/bitable/wiki/mindnote/file）
-	FolderTokens []string // 文件夹 Token 列表
-	SpaceIDs     []string // Wiki 空间 ID 列表
-	CreatorIDs   []string // 创建者 ID 列表
-	OnlyTitle    *bool    // 仅搜索标题
-	SortType     string   // 排序方式（EditedTime/CreatedTime/OpenedTime）
-	PageSize     int      // 每页数量
-	PageToken    string   // 分页 token
+	Query    string   // 搜索关键词
+	Count    int      // 返回数量（0-50）
+	Offset   int      // 偏移量（offset + count < 200）
+	OwnerIDs []string // 文件所有者 Open ID 列表
+	ChatIDs  []string // 文件所在群 ID 列表
+	DocTypes []string // 文档类型（doc/docx/sheet/slides/bitable/mindnote/file/wiki/shortcut）
 }
 
 // SearchDocWikiResult 搜索文档和 Wiki 的结果
 type SearchDocWikiResult struct {
-	Total     int               // 总结果数
-	HasMore   bool              // 是否有更多
-	ResUnits  []*DocWikiResUnit // 搜索结果列表
-	PageToken string            // 分页 token
+	Total    int               // 总结果数
+	HasMore  bool              // 是否有更多
+	ResUnits []*DocWikiResUnit // 搜索结果列表
 }
 
 // DocWikiResUnit 文档搜索结果单元
 type DocWikiResUnit struct {
-	TitleHighlighted   string // 高亮标题
-	SummaryHighlighted string // 高亮摘要
-	EntityType         string // 结果类型
-	URL                string // 文档 URL
-	Token              string // 文档 Token
-	OwnerID            string // 所有者 ID
-	OwnerName          string // 所有者名称
-	DocTypes           string // 文档类型
-	CreateTime         int64  // 创建时间
-	UpdateTime         int64  // 更新时间
+	DocsToken string // 文档 Token
+	DocsType  string // 文档类型
+	Title     string // 标题
+	OwnerID   string // 所有者 ID
+	URL       string // 文档 URL（根据类型和 Token 拼接）
 }
 
-// SearchDocWiki 搜索文档和 Wiki
+// docsTypeURLPath 文档类型到 URL 路径的映射
+var docsTypeURLPath = map[string]string{
+	"doc":      "docx",
+	"docx":     "docx",
+	"sheet":    "sheets",
+	"bitable":  "base",
+	"mindnote": "mindnotes",
+	"file":     "file",
+	"slides":   "slides",
+	"wiki":     "wiki",
+	"shortcut": "docx",
+}
+
+// buildDocsURL 根据文档类型和 Token 拼接飞书文档 URL
+func buildDocsURL(docsType, docsToken string) string {
+	path, ok := docsTypeURLPath[docsType]
+	if !ok {
+		path = docsType
+	}
+	return fmt.Sprintf("https://feishu.cn/%s/%s", path, docsToken)
+}
+
+// SearchDocWiki 搜索云文档
+// 使用 /open-apis/suite/docs-api/search/object 端点
 // 注意：此 API 需要 User Access Token
 func SearchDocWiki(opts SearchDocWikiOptions, userAccessToken string) (*SearchDocWikiResult, error) {
 	client, err := GetClient()
@@ -201,146 +217,76 @@ func SearchDocWiki(opts SearchDocWikiOptions, userAccessToken string) (*SearchDo
 	}
 
 	// 构建请求体
-	bodyBuilder := larksearch.NewSearchDocWikiReqBodyBuilder().
-		Query(opts.Query)
-
-	// 按类型拆分：wiki 类型走 WikiFilter，其余走 DocFilter，支持同时设置
-	var wikiTypes, docTypes []string
-	for _, dt := range opts.DocTypes {
-		if dt == "WIKI" {
-			wikiTypes = append(wikiTypes, dt)
-		} else {
-			docTypes = append(docTypes, dt)
-		}
+	body := map[string]any{
+		"search_key": opts.Query,
+	}
+	if opts.Count > 0 {
+		body["count"] = opts.Count
+	}
+	if opts.Offset > 0 {
+		body["offset"] = opts.Offset
+	}
+	if len(opts.OwnerIDs) > 0 {
+		body["owner_ids"] = opts.OwnerIDs
+	}
+	if len(opts.ChatIDs) > 0 {
+		body["chat_ids"] = opts.ChatIDs
+	}
+	if len(opts.DocTypes) > 0 {
+		body["docs_types"] = opts.DocTypes
 	}
 
-	// 构建 DocFilter：有非 wiki 文档类型、有文件夹范围时需要；
-	// 仅指定了 wiki 类型时，通用筛选条件（创建者/标题/排序）只加到 WikiFilter
-	needDocFilter := len(docTypes) > 0 || len(opts.FolderTokens) > 0 ||
-		(len(wikiTypes) == 0 && (len(opts.CreatorIDs) > 0 || opts.OnlyTitle != nil || opts.SortType != ""))
-	if needDocFilter {
-		docFilterBuilder := larksearch.NewDocFilterBuilder()
-		if len(docTypes) > 0 {
-			docFilterBuilder.DocTypes(docTypes)
-		}
-		if len(opts.FolderTokens) > 0 {
-			docFilterBuilder.FolderTokens(opts.FolderTokens)
-		}
-		if len(opts.CreatorIDs) > 0 {
-			docFilterBuilder.CreatorIds(opts.CreatorIDs)
-		}
-		if opts.OnlyTitle != nil {
-			docFilterBuilder.OnlyTitle(*opts.OnlyTitle)
-		}
-		if opts.SortType != "" {
-			docFilterBuilder.SortType(opts.SortType)
-		}
-		bodyBuilder.DocFilter(docFilterBuilder.Build())
-	}
+	apiPath := "/open-apis/suite/docs-api/search/object"
 
-	// 构建 WikiFilter（有 wiki 类型或有 space-ids）
-	needWikiFilter := len(wikiTypes) > 0 || len(opts.SpaceIDs) > 0
-	if needWikiFilter {
-		wikiFilterBuilder := larksearch.NewWikiFilterBuilder()
-		if len(opts.SpaceIDs) > 0 {
-			wikiFilterBuilder.SpaceIds(opts.SpaceIDs)
-		}
-		if len(opts.CreatorIDs) > 0 {
-			wikiFilterBuilder.CreatorIds(opts.CreatorIDs)
-		}
-		if len(wikiTypes) > 0 {
-			wikiFilterBuilder.DocTypes(wikiTypes)
-		}
-		if opts.OnlyTitle != nil {
-			wikiFilterBuilder.OnlyTitle(*opts.OnlyTitle)
-		}
-		if opts.SortType != "" {
-			wikiFilterBuilder.SortType(opts.SortType)
-		}
-		bodyBuilder.WikiFilter(wikiFilterBuilder.Build())
-	}
-
-	// 设置分页参数
-	if opts.PageSize > 0 {
-		bodyBuilder.PageSize(opts.PageSize)
-	}
-	if opts.PageToken != "" {
-		bodyBuilder.PageToken(opts.PageToken)
-	}
-
-	// 构建请求
-	req := larksearch.NewSearchDocWikiReqBuilder().
-		Body(bodyBuilder.Build()).
-		Build()
-
-	// 使用 User Access Token 调用 API
-	resp, err := client.Search.V2.DocWiki.Search(Context(), req,
+	resp, err := client.Post(Context(), apiPath, body,
+		larkcore.AccessTokenTypeUser,
 		larkcore.WithUserAccessToken(userAccessToken))
 	if err != nil {
 		return nil, fmt.Errorf("搜索文档失败: %w", err)
 	}
 
-	if !resp.Success() {
-		return nil, fmt.Errorf("搜索文档失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("搜索文档失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
 	}
 
-	// 解析结果
+	// 解析响应
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			DocsEntities []struct {
+				DocsToken string `json:"docs_token"`
+				DocsType  string `json:"docs_type"`
+				Title     string `json:"title"`
+				OwnerID   string `json:"owner_id"`
+			} `json:"docs_entities"`
+			HasMore bool `json:"has_more"`
+			Total   int  `json:"total"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析搜索响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("搜索文档失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
 	result := &SearchDocWikiResult{
-		ResUnits: make([]*DocWikiResUnit, 0),
+		Total:    apiResp.Data.Total,
+		HasMore:  apiResp.Data.HasMore,
+		ResUnits: make([]*DocWikiResUnit, 0, len(apiResp.Data.DocsEntities)),
 	}
 
-	if resp.Data != nil {
-		if resp.Data.Total != nil {
-			result.Total = *resp.Data.Total
-		}
-		if resp.Data.HasMore != nil {
-			result.HasMore = *resp.Data.HasMore
-		}
-		if resp.Data.PageToken != nil {
-			result.PageToken = *resp.Data.PageToken
-		}
-
-		// 解析每个结果单元
-		for _, item := range resp.Data.ResUnits {
-			unit := &DocWikiResUnit{}
-
-			if item.TitleHighlighted != nil {
-				unit.TitleHighlighted = *item.TitleHighlighted
-			}
-			if item.SummaryHighlighted != nil {
-				unit.SummaryHighlighted = *item.SummaryHighlighted
-			}
-			if item.EntityType != nil {
-				unit.EntityType = *item.EntityType
-			}
-
-			// 解析元数据
-			if item.ResultMeta != nil {
-				if item.ResultMeta.Url != nil {
-					unit.URL = *item.ResultMeta.Url
-				}
-				if item.ResultMeta.Token != nil {
-					unit.Token = *item.ResultMeta.Token
-				}
-				if item.ResultMeta.OwnerId != nil {
-					unit.OwnerID = *item.ResultMeta.OwnerId
-				}
-				if item.ResultMeta.OwnerName != nil {
-					unit.OwnerName = *item.ResultMeta.OwnerName
-				}
-				if item.ResultMeta.DocTypes != nil {
-					unit.DocTypes = *item.ResultMeta.DocTypes
-				}
-				if item.ResultMeta.CreateTime != nil {
-					unit.CreateTime = int64(*item.ResultMeta.CreateTime)
-				}
-				if item.ResultMeta.UpdateTime != nil {
-					unit.UpdateTime = int64(*item.ResultMeta.UpdateTime)
-				}
-			}
-
-			result.ResUnits = append(result.ResUnits, unit)
-		}
+	for _, entity := range apiResp.Data.DocsEntities {
+		result.ResUnits = append(result.ResUnits, &DocWikiResUnit{
+			DocsToken: entity.DocsToken,
+			DocsType:  entity.DocsType,
+			Title:     entity.Title,
+			OwnerID:   entity.OwnerID,
+			URL:       buildDocsURL(entity.DocsType, entity.DocsToken),
+		})
 	}
 
 	return result, nil

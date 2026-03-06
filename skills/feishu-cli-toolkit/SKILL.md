@@ -459,8 +459,14 @@ feishu-cli search docs "关键词" \
 
 ### User Access Token 说明
 
-- 通过 `--user-access-token` 参数或 `FEISHU_USER_ACCESS_TOKEN` 环境变量提供
+获取方式（按推荐优先级）：
+
+1. **`feishu-cli auth login`（推荐）**：一键 OAuth 登录，Token 自动保存到 `~/.feishu-cli/token.json`，过期自动刷新
+2. **`--user-access-token` 参数**：手动指定 Token
+3. **`FEISHU_USER_ACCESS_TOKEN` 环境变量**：通过环境变量提供
+
 - Token 有效期约 2 小时，Refresh Token 有效期 30 天
+- 使用 `auth login` 后无需每次手动传 Token，过期时自动用 Refresh Token 刷新
 - 不能使用 App Access Token（会报权限错误）
 
 **详细参考**：读取 `references/search-commands.md` 获取完整筛选参数说明。

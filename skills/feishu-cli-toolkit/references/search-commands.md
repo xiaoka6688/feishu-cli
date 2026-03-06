@@ -4,10 +4,13 @@
 
 ## User Access Token 获取方式
 
-1. **命令行参数**：`--user-access-token <token>`
-2. **环境变量**：`FEISHU_USER_ACCESS_TOKEN=<token>`
+按优先级从高到低：
 
-Token 有效期约 2 小时，Refresh Token 有效期 30 天。
+1. **`feishu-cli auth login`（推荐）**：一键 OAuth 登录，Token 自动保存并支持过期自动刷新，无需每次手动传 Token
+2. **命令行参数**：`--user-access-token <token>`
+3. **环境变量**：`FEISHU_USER_ACCESS_TOKEN=<token>`
+
+Token 有效期约 2 小时，Refresh Token 有效期 30 天。使用 `auth login` 方式时，Access Token 过期后会自动用 Refresh Token 刷新。
 
 ## 搜索消息
 
@@ -69,99 +72,69 @@ feishu-cli search apps "应用名称" \
   [--page-token <token>]
 ```
 
-## 搜索文档和 Wiki
+## 搜索云文档
+
+使用 `/open-apis/suite/docs-api/search/object` 端点搜索当前用户可见的云文档。
 
 ```bash
 feishu-cli search docs "关键词" \
-  --user-access-token <token> \
-  [--doc-types DOC,SHEET,WIKI] \
-  [--folder-tokens fldcnxxxxxxxxxxxxxx] \
-  [--space-ids space_xxxxxxxxxxxx] \
-  [--creator-ids ou_xxx,ou_yyy] \
-  [--only-title] \
-  [--sort-type EditedTime|CreatedTime|OpenedTime] \
-  [--page-size 20] \
-  [--page-token <token>]
+  [--count 20] \
+  [--offset 0] \
+  [--owner-ids ou_xxx,ou_yyy] \
+  [--chat-ids oc_xxx,oc_yyy] \
+  [--docs-types doc,sheet,slides]
 ```
 
-### 文档类型（必须大写）
+### 文档类型（小写）
 
 | 类型 | 说明 |
 |------|------|
-| `DOC` | 飞书文档 |
-| `SHEET` | 电子表格 |
-| `BITABLE` | 多维表格 |
-| `MINDNOTE` | 思维笔记 |
-| `FILE` | 文件 |
-| `WIKI` | 知识库 |
-| `DOCX` | 新版文档 |
-| `FOLDER` | 文件夹 |
-| `CATALOG` | 目录 |
-| `SLIDES` | 幻灯片 |
-| `SHORTCUT` | 快捷方式 |
+| `doc` | 旧版飞书文档 |
+| `docx` | 新版飞书文档 |
+| `sheet` | 电子表格 |
+| `slides` | 幻灯片 |
+| `bitable` | 多维表格 |
+| `mindnote` | 思维笔记 |
+| `file` | 文件 |
+| `wiki` | 知识库文档 |
+| `shortcut` | 快捷方式 |
 
 ### 筛选参数
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `--doc-types` | string | 文档类型列表（逗号分隔，必须大写） |
-| `--folder-tokens` | string | 限定文件夹范围（逗号分隔） |
-| `--space-ids` | string | 限定 Wiki 空间（逗号分隔） |
-| `--creator-ids` | string | 限定创建者（逗号分隔） |
-| `--only-title` | flag | 仅搜索标题（不加此参数则搜索全文） |
-| `--sort-type` | string | 排序方式：`EditedTime`（最后编辑）/`CreatedTime`（创建时间）/`OpenedTime`（最后打开） |
+| `--count` | int | 返回数量（0-50，默认 20） |
+| `--offset` | int | 偏移量（offset + count < 200） |
+| `--owner-ids` | string | 文件所有者 Open ID 列表（逗号分隔） |
+| `--chat-ids` | string | 文件所在群 ID 列表（逗号分隔） |
+| `--docs-types` | string | 文档类型列表（逗号分隔，小写，可选值见上表） |
 
 ### 示例
 
 ```bash
+# 先登录获取 Token（推荐）
+feishu-cli auth login
+
 # 基础搜索
-feishu-cli search docs "产品需求" --user-access-token u-xxx
-
-# 搜索特定类型的文档（注意：类型必须大写）
-feishu-cli search docs "季度报告" \
-  --user-access-token u-xxx \
-  --doc-types DOC,SHEET
-
-# 搜索特定文件夹下的文档
-feishu-cli search docs "会议纪要" \
-  --user-access-token u-xxx \
-  --folder-tokens fldcnxxxxxxxxxxxxxx
-
-# 仅搜索标题
-feishu-cli search docs "技术方案" \
-  --user-access-token u-xxx \
-  --only-title
-
-# 搜索 Wiki 空间中的文档
-feishu-cli search docs "项目文档" \
-  --user-access-token u-xxx \
-  --doc-types WIKI \
-  --space-ids space_xxxxxxxxxxxx
-
-# 按最后编辑时间排序
-feishu-cli search docs "文档" \
-  --user-access-token u-xxx \
-  --sort-type EditedTime
-
-# 搜索特定创建者的文档
-feishu-cli search docs "设计稿" \
-  --user-access-token u-xxx \
-  --creator-ids ou_xxx,ou_yyy
-
-# 使用环境变量（推荐）
-export FEISHU_USER_ACCESS_TOKEN="u-xxx"
 feishu-cli search docs "产品需求"
+
+# 搜索特定类型的文档
+feishu-cli search docs "季度报告" --docs-types doc,sheet
+
+# 指定返回数量和偏移
+feishu-cli search docs "技术方案" --count 10 --offset 0
+
+# 也可以手动指定 Token
+feishu-cli search docs "产品需求" --user-access-token u-xxx
 ```
 
 ### 输出格式
 
 搜索结果包含以下信息：
-- 高亮标题
+- 标题
 - 文档类型
-- 文档 URL
-- 所有者名称
-- 创建/更新时间
-- 摘要（高亮显示匹配内容）
+- 文档 Token
+- 所有者 ID
 
 ### 注意事项
 

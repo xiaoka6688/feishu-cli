@@ -183,6 +183,16 @@ export FEISHU_APP_SECRET="xxx"
 feishu-cli config init
 ```
 
+4. （可选）如果需要使用搜索功能，还需完成 OAuth 用户授权：
+
+```bash
+# 前置条件：在飞书开放平台 → 应用详情 → 安全设置 → 重定向 URL 中添加：
+# http://127.0.0.1:9768/callback
+
+# 一键 OAuth 登录
+feishu-cli auth login
+```
+
 ### 验证安装
 
 ```bash
@@ -213,6 +223,7 @@ Commands:
   board     画板操作（导入图表、下载图片）
   comment   评论操作（列出、添加、解决/恢复、回复管理）
   search    搜索操作（消息、应用、文档）
+  auth      身份认证（OAuth 登录、状态、退出）
   config    配置管理
 ```
 
@@ -418,25 +429,63 @@ feishu-cli file stats <file_token> --doc-type docx
 <details>
 <summary>搜索操作</summary>
 
+搜索 API 需要 User Access Token。推荐使用 `auth login` 一键获取（Token 自动保存和刷新），也可通过 `--user-access-token` 参数或环境变量手动指定。
+
 ```bash
-# 搜索消息（需要 User Access Token）
-feishu-cli search messages "关键词" --user-access-token <token>
-feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy --user-access-token <token>
+# 获取 User Access Token（推荐，一次登录自动刷新）
+feishu-cli auth login
 
-# 搜索应用（需要 User Access Token）
-feishu-cli search apps "审批" --user-access-token <token>
+# 搜索消息
+feishu-cli search messages "关键词"
+feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
 
-# 搜索文档和 Wiki（需要 User Access Token）
+# 搜索应用
+feishu-cli search apps "审批"
+
+# 搜索文档和 Wiki
+feishu-cli search docs "产品需求"
+feishu-cli search docs "季度报告" --docs-types doc,sheet
+feishu-cli search docs "技术方案" --count 10 --offset 0
+
+# 也可以手动指定 Token
 feishu-cli search docs "产品需求" --user-access-token <token>
-feishu-cli search docs "季度报告" --doc-types DOC,SHEET --user-access-token <token>
-feishu-cli search docs "会议纪要" --folder-tokens fldcnxxxxxxxxxxxxxx --user-access-token <token>
-feishu-cli search docs "技术方案" --only-title --user-access-token <token>
-feishu-cli search docs "项目文档" --doc-types WIKI --space-ids space_xxxxxxxxxxxx --user-access-token <token>
-
-# 使用环境变量（推荐）
 export FEISHU_USER_ACCESS_TOKEN="u-xxx"
 feishu-cli search docs "产品需求"
 ```
+
+</details>
+
+<details>
+<summary>身份认证</summary>
+
+通过 OAuth 2.0 获取 User Access Token，用于搜索等需要用户授权的功能。
+
+**前置条件**：在飞书开放平台 → 应用详情 → 安全设置 → 重定向 URL 中添加 `http://127.0.0.1:9768/callback`
+
+```bash
+# 登录授权（自动打开浏览器完成 OAuth）
+feishu-cli auth login
+
+# SSH 远程环境使用手动模式
+feishu-cli auth login --manual
+
+# 指定端口（默认 9768）
+feishu-cli auth login --port 8080
+
+# 指定 OAuth scope
+feishu-cli auth login --scopes "search:docs:read search:message offline_access"
+
+# 查看当前授权状态
+feishu-cli auth status
+
+# 退出登录（清除本地 token）
+feishu-cli auth logout
+```
+
+**Token 管理**：
+- Token 保存在 `~/.feishu-cli/token.json`，Access Token 有效期约 2 小时
+- Access Token 过期时自动使用 Refresh Token 刷新（Refresh Token 有效期 30 天）
+- Token 优先级：`--user-access-token` 参数 > `FEISHU_USER_ACCESS_TOKEN` 环境变量 > `token.json` > `config.yaml`
 
 </details>
 
@@ -571,8 +620,8 @@ feishu-cli dept children <department_id>
 | 日历 | `calendar:calendar:readonly`, `calendar:calendar` | 需单独申请 |
 | 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
 | 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
-| 搜索消息/应用 | 需要 User Access Token | 用户授权 |
-| 搜索文档 | 需要 User Access Token | 用户授权，支持 `search:read` 权限 |
+| 搜索消息/应用 | 需要 User Access Token | 通过 `auth login` 或手动获取 |
+| 搜索文档 | 需要 User Access Token | 通过 `auth login` 或手动获取，支持 `search:read` 权限 |
 
 ## 技术栈
 
