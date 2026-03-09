@@ -15,12 +15,30 @@ allowed-tools: Bash, Read, Write
 
 # 飞书画板操作技能
 
+## 前置条件
+
+- **认证**：需要有效的 App Access Token（环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET`，或 `~/.feishu-cli/config.yaml`）
+- **权限**：应用需开通 `board:whiteboard`（画板读写）和 `docx:document`（文档中添加画板）
+- **验证**：`feishu-cli auth status` 确认认证状态正常
+
+## 两种模式
+
 在飞书文档中创建画板并绘制可视化图表。支持两种模式：
 
 | 模式 | 方式 | 适用场景 |
 |------|------|---------|
 | **精排绘图** | `board create-notes` — JSON 描述节点坐标、颜色、连线 | 架构图、看板、自定义布局 |
 | **图表导入** | `board import` — Mermaid/PlantUML 代码自动渲染 | 标准流程图、时序图等 8 种图表 |
+
+### 何时使用哪种方式
+
+| 需求 | 推荐方式 | 说明 |
+|------|---------|------|
+| 精确控制节点位置、颜色、坐标 | `board create-notes`（本技能） | 完全自定义布局，适合架构图、看板 |
+| 从 Mermaid/PlantUML 代码快速生成图 | `board import` 或 `doc import` | 服务端自动排版，无需手动计算坐标 |
+| 在文档中内嵌简单图表 | `feishu-cli-write` / `feishu-cli-import` 的 Mermaid 支持 | Markdown 中写 Mermaid 代码块，导入时自动转画板 |
+
+**简单判断**：如果你只需要"画个流程图"且不关心精确坐标，优先用 Mermaid；如果需要"精排"或"自定义配色布局"，用 `create-notes`。
 
 ## 精排绘图工作流（create-notes）
 
@@ -47,6 +65,44 @@ feishu-cli board image <whiteboard_id> output.png
 ```
 
 **关键原则**：先创建所有形状节点获取 ID，再创建连接线引用这些 ID。
+
+### 最小示例：2 个节点 + 1 条连线
+
+在深入 JSON 格式细节之前，先看一个最小的完整示例——两个矩形节点通过一条箭头连接：
+
+```bash
+# shapes.json — 两个形状节点
+cat > /tmp/minimal_shapes.json << 'EOF'
+[
+  {"type":"composite_shape","x":100,"y":100,"width":160,"height":40,
+   "composite_shape":{"type":"round_rect"},
+   "text":{"text":"服务 A","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
+   "style":{"fill_color":"#3399ff","fill_opacity":100,"border_style":"none"},
+   "z_index":10},
+  {"type":"composite_shape","x":400,"y":100,"width":160,"height":40,
+   "composite_shape":{"type":"round_rect"},
+   "text":{"text":"服务 B","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
+   "style":{"fill_color":"#509863","fill_opacity":100,"border_style":"none"},
+   "z_index":10}
+]
+EOF
+feishu-cli board create-notes $BOARD_ID /tmp/minimal_shapes.json -o json
+# → 返回 node_ids: ["o1:1", "o1:2"]
+
+# connector.json — 一条从服务 A 指向服务 B 的连线
+cat > /tmp/minimal_connector.json << 'EOF'
+[
+  {"type":"connector","width":1,"height":1,"z_index":50,
+   "connector":{"shape":"polyline",
+     "start":{"arrow_style":"none","attached_object":{"id":"o1:1","position":{"x":1,"y":0.5},"snap_to":"right"}},
+     "end":{"arrow_style":"triangle_arrow","attached_object":{"id":"o1:2","position":{"x":0,"y":0.5},"snap_to":"left"}}},
+   "style":{"border_color":"#646a73","border_opacity":100,"border_style":"solid","border_width":"narrow"}}
+]
+EOF
+feishu-cli board create-notes $BOARD_ID /tmp/minimal_connector.json -o json
+```
+
+这就是 create-notes 的基本模式：**形状定义位置和样式 → 连接线通过 ID 引用形状**。下面是各字段的详细说明。
 
 ### 节点 JSON 格式
 
@@ -243,7 +299,9 @@ feishu-cli doc add-board <document_id> -o json
 | `board:whiteboard` | 画板读写 |
 | `docx:document` | 文档中添加画板 |
 
-## 错误码
+## 错误排障
+
+### 错误码速查
 
 | 错误码 | 含义 | 常见原因 |
 |--------|------|---------|
@@ -251,6 +309,32 @@ feishu-cli doc add-board <document_id> -o json
 | 2890002 | invalid arg | 包含未公开字段（如 `sticky_note` 类型）或格式不对 |
 | 2890003 | record missing | whiteboard_id 不存在 |
 | 2890006 | rate limited | 超过 50 req/s |
+
+### 排障指引
+
+**2890002 invalid arg（最常见）**：
+
+JSON 中包含了 API 不支持的字段。只使用以下安全字段：
+
+- `composite_shape` 节点：`type`, `x`, `y`, `width`, `height`, `composite_shape`, `text`, `style`, `z_index`
+- `connector` 节点：`type`, `width`, `height`, `z_index`, `connector`, `style`
+- `text` 对象：`text`, `font_size`, `font_weight`, `horizontal_align`, `vertical_align`
+- `style` 对象：`fill_color`, `fill_opacity`, `border_style`, `border_color`, `border_width`, `border_opacity`
+
+排查步骤：逐步删减 JSON 字段，定位导致错误的多余字段。常见陷阱包括 `id`、`locked`、`children`、`text_color_type` 等只读字段。
+
+**画板创建失败**：
+
+- 检查应用是否已开通 `board:whiteboard` 权限
+- 确认 `whiteboard_id` 来自 `doc add-board` 的返回值，而非 `document_id`
+- 运行 `feishu-cli auth status` 确认 Token 有效
+
+**Mermaid 导入降级为代码块**：
+
+- 飞书服务端解析失败时会自动降级，属于预期行为
+- 使用 `--verbose` 查看具体的服务端错误信息
+- 常见原因：花括号 `{text}`、`par...and...end` 语法、参与者过多（>8）
+- 解决方案：简化图表语法，或拆分为多个小图表
 
 ## 完整示例：绘制简单架构图
 

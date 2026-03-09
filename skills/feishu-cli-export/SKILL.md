@@ -1,10 +1,10 @@
 ---
 name: feishu-cli-export
 description: >-
-  将飞书文档或知识库文档导出为 Markdown 文件，或导出为 PDF/Word/Excel 等格式（异步任务）。
-  也支持从本地 DOCX/XLSX 文件导入为飞书云文档。当用户请求"导出文档"、"转换为 Markdown"、
-  "保存为 md"、"导出 PDF"、"导出 Word"、"docx 转飞书"、"导入 docx"时使用。
-  Markdown 作为中间格式存储在 /tmp 目录。
+  将飞书文档或知识库文档导出为 Markdown 文件，或导出为 PDF/Word 等格式（异步任务）。
+  当用户请求"导出文档"、"导出为 Markdown"、"转换为 Markdown"、"保存为 md"、
+  "导出 PDF"、"导出 Word"、"下载文档"时使用。
+  本技能专注于导出操作。从本地 DOCX 文件导入请使用 feishu-cli-import。
 argument-hint: <document_id|node_token|url> [output_path]
 user-invocable: true
 allowed-tools: Bash, Read
@@ -14,9 +14,15 @@ allowed-tools: Bash, Read
 
 将飞书云文档或知识库文档导出为本地 Markdown 文件，或导出为 PDF/Word 等格式。
 
+## 前置条件
+
+- 需要已配置飞书应用凭证（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`），通过环境变量或 `~/.feishu-cli/config.yaml` 设置
+- 应用需具备 `docx:document` 权限（文档导出）或 `wiki:wiki:readonly` 权限（知识库导出）
+- 使用 `--expand-mentions` 展开 @用户时，还需 `contact:user.base:readonly` 权限
+
 ## 核心概念
 
-**Markdown 作为中间态**：本地文档与飞书云文档之间通过 Markdown 格式进行转换，中间文件默认存储在 `/tmp` 目录中。
+**Markdown 作为中间格式**：飞书云文档的内容通过 Markdown 格式导出到本地。选择 Markdown 作为中间格式，是因为它结构清晰、便于 Claude 理解和处理文档内容，同时也方便用户进行二次编辑或版本管理。中间文件默认存储在 `/tmp` 目录中。
 
 ## 使用方法
 
@@ -60,7 +66,7 @@ allowed-tools: Bash, Read
 |------|------|--------|
 | document_id/node_token | 文档 ID 或知识库节点 Token | 必需 |
 | output_path | 输出文件路径 | `/tmp/<id>.md` |
-| --download-images | 下载文档中的图片和画板（画板自动导出为 PNG） | 否 |
+| --download-images | 下载文档中的图片和画板到本地（图片在飞书服务器以 token 形式存储，不下载则无法本地查看；画板自动导出为 PNG） | 否 |
 | --assets-dir | 图片和画板的保存目录 | `./assets` |
 | --front-matter | 添加 YAML front matter（标题和文档 ID） | 否 |
 | --highlight | 保留文本颜色和背景色（输出为 HTML `<span>` 标签） | 否 |
@@ -222,77 +228,6 @@ sleep 5 && feishu-cli doc export <doc_id>
 | 表格导出 | 表格内单元格内容可能显示为 `<!-- Unknown block type: 32 -->`，这是块类型 32（表格单元格）的已知转换问题 |
 | 目录节点 | 知识库目录节点导出内容为 `[Wiki 目录...]`，需单独获取子节点 |
 
-## 导出块类型支持
-
-| 飞书块类型 | 导出结果 | 说明 |
-|-----------|---------|------|
-| 标题 (Heading 1-6) | `# ~ ######` | |
-| 标题 (Heading 7-9) | `######` 或粗体段落 | 超出 H6 时降级 |
-| 段落 (Text) | 普通文本 | |
-| 无序列表 (Bullet) | `- item` | 支持无限深度嵌套 |
-| 有序列表 (Ordered) | `1. item` | 保留原始编号序列 |
-| 任务列表 (Todo) | `- [x]` / `- [ ]` | |
-| 代码块 (Code) | ` ```lang ``` ` | 使用原始文本，无转义 |
-| 引用 (Quote) | `> text` | |
-| 引用容器 (QuoteContainer) | `> text` | 支持嵌套引用 |
-| **Callout 高亮块** | `> [!TYPE]` | 6 种类型 |
-| **公式 (Equation)** | `$formula$` | 块级公式 |
-| **行内公式** | `$formula$` | 段落内嵌公式 |
-| 分割线 (Divider) | `---` | |
-| 表格 (Table) | Markdown 表格 | 管道符自动转义 |
-| 图片 (Image) | `\[Image: url\]` | |
-| 链接 | `[text](url)` | URL 特殊字符自动编码 |
-| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 或 PNG 图片 | 使用 `--download-images` 时自动导出为 PNG |
-| **ISV 块** | 画板链接或 HTML 注释 | Mermaid 绘图/时间线 |
-| **Iframe** | `<iframe>` HTML 标签 | 嵌入内容 |
-| **AddOns/TextDrawing** | Mermaid/PlantUML 代码块 | 文本绘图小组件自动还原为图表源码 |
-| **AddOns/SyncedBlock** | 展开子块内容 | 透明展开 |
-| Wiki 目录 | `[Wiki 目录...]` | |
-| **Agenda/AgendaItem** | 展开子块内容 | 议程块 |
-| **LinkPreview** | 链接 | 链接预览 |
-| **SyncSource/SyncReference** | 展开子块内容 | 同步块 |
-| **WikiCatalogV2** | `[知识库目录 V2]` | |
-| **AITemplate** | HTML 注释 | AI 模板块 |
-
-### Callout 高亮块导出
-
-Callout 块（飞书高亮块）导出为 GitHub-style alert 语法：
-
-```markdown
-> [!NOTE]
-> 这是一个提示信息。
-
-> [!WARNING]
-> 这是一个警告信息。
-```
-
-支持 6 种 Callout 类型（按背景色映射）：
-
-| 背景色 | 导出类型 | 说明 |
-|--------|---------|------|
-| 2 (红色) | `[!WARNING]` | 警告 |
-| 3 (橙色) | `[!CAUTION]` | 警示 |
-| 4 (黄色) | `[!TIP]` | 技巧 |
-| 5 (绿色) | `[!SUCCESS]` | 成功 |
-| 6 (蓝色) | `[!NOTE]` | 提示 |
-| 7 (紫色) | `[!IMPORTANT]` | 重要 |
-
-Callout 内部子块（段落、列表等）会在引用语法内逐行展示。
-
-### 公式导出
-
-- **块级公式**：独立行 `$formula$`
-- **行内公式**：段落内嵌 `$E = mc^2$`
-- 公式内容保持 LaTeX 原文，不做转义
-
-### 特殊字符处理
-
-导出时自动处理以下 Markdown 特殊字符：
-- 普通文本中的 `* _ [ ] # ~ $ > |` 会自动添加 `\` 转义
-- 代码块内的文本不做转义（使用原始文本）
-- 表格单元格中的 `|` 会转义为 `\|`
-- URL 中的括号 `(` `)` 会编码为 `%28` `%29`
-
 ## 已验证功能
 
 以下导出功能已通过测试验证：
@@ -392,17 +327,99 @@ feishu-cli doc import-file local_file.docx --type docx --name "文档名称"
 | `<local_path>` | 本地文件路径 | 必填 |
 | `--type` | 文件类型 | 必填 |
 | `--name` | 飞书文档名称 | 文件名 |
+| `--folder` | 目标文件夹 Token（**必须提供**，飞书 API 要求指定文档挂载点，不传会报 `field validation failed`） | — |
 
 ### 示例
 
 ```bash
-# 导入 Word 文档
-feishu-cli doc import-file ~/Documents/report.docx --type docx --name "季度报告"
+# 导入 Word 文档（必须指定 --folder）
+feishu-cli doc import-file ~/Documents/report.docx --type docx --name "季度报告" --folder fldcnXXX
 ```
 
-### 已知问题
+---
 
-> **注意**：`doc import-file` 不提供 `--folder` 时会报 `field validation failed`
-> （API 的 mount point 为必填，但 CLI 标记为可选）。
-> **解决方法**：始终传入 `--folder` 参数指定目标文件夹 Token，例如：
-> `feishu-cli doc import-file report.docx --type docx --folder fldcnXXX`
+## 常见问题
+
+| 问题 | 原因 | 解决方法 |
+|------|------|----------|
+| `code=131003, no permission` | 应用未授权访问该文档 | 确认应用有 `docx:document` 或 `wiki:wiki:readonly` 权限，且文档对应用可见 |
+| `code=99991672, rate limit` | API 请求频率超限 | 等待几秒后重试 |
+| `field validation failed`（import-file） | 未传 `--folder` 参数 | 始终指定 `--folder fldcnXXX` |
+| 导出的 Markdown 中图片显示为 token 而非内容 | 未使用 `--download-images` | 添加 `--download-images --assets-dir <dir>` 参数 |
+| 表格单元格内容显示为 `<!-- Unknown block type: 32 -->` | 块类型 32（TableCell）的已知转换问题 | 暂无修复，手动补充内容 |
+| `--expand-mentions` 报权限错误 | 缺少 `contact:user.base:readonly` 权限 | 在飞书开放平台为应用申请该权限，或使用 `--expand-mentions=false` 关闭 |
+
+---
+
+## 附录：Block 类型映射参考
+
+以下是飞书文档块类型与导出 Markdown 格式的完整映射关系。
+
+| 飞书块类型 | 导出结果 | 说明 |
+|-----------|---------|------|
+| 标题 (Heading 1-6) | `# ~ ######` | |
+| 标题 (Heading 7-9) | `######` 或粗体段落 | 超出 H6 时降级 |
+| 段落 (Text) | 普通文本 | |
+| 无序列表 (Bullet) | `- item` | 支持无限深度嵌套 |
+| 有序列表 (Ordered) | `1. item` | 保留原始编号序列 |
+| 任务列表 (Todo) | `- [x]` / `- [ ]` | |
+| 代码块 (Code) | ` ```lang ``` ` | 使用原始文本，无转义 |
+| 引用 (Quote) | `> text` | |
+| 引用容器 (QuoteContainer) | `> text` | 支持嵌套引用 |
+| Callout 高亮块 | `> [!TYPE]` | 6 种类型 |
+| 公式 (Equation) | `$formula$` | 块级公式 |
+| 行内公式 | `$formula$` | 段落内嵌公式 |
+| 分割线 (Divider) | `---` | |
+| 表格 (Table) | Markdown 表格 | 管道符自动转义 |
+| 图片 (Image) | `\[Image: url\]` | |
+| 链接 | `[text](url)` | URL 特殊字符自动编码 |
+| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 或 PNG 图片 | 使用 `--download-images` 时自动导出为 PNG |
+| ISV 块 | 画板链接或 HTML 注释 | Mermaid 绘图/时间线 |
+| Iframe | `<iframe>` HTML 标签 | 嵌入内容 |
+| AddOns/TextDrawing | Mermaid/PlantUML 代码块 | 文本绘图小组件自动还原为图表源码 |
+| AddOns/SyncedBlock | 展开子块内容 | 透明展开 |
+| Wiki 目录 | `[Wiki 目录...]` | |
+| Agenda/AgendaItem | 展开子块内容 | 议程块 |
+| LinkPreview | 链接 | 链接预览 |
+| SyncSource/SyncReference | 展开子块内容 | 同步块 |
+| WikiCatalogV2 | `[知识库目录 V2]` | |
+| AITemplate | HTML 注释 | AI 模板块 |
+
+### Callout 高亮块导出
+
+Callout 块（飞书高亮块）导出为 GitHub-style alert 语法：
+
+```markdown
+> [!NOTE]
+> 这是一个提示信息。
+
+> [!WARNING]
+> 这是一个警告信息。
+```
+
+支持 6 种 Callout 类型（按背景色映射）：
+
+| 背景色 | 导出类型 | 说明 |
+|--------|---------|------|
+| 2 (红色) | `[!WARNING]` | 警告 |
+| 3 (橙色) | `[!CAUTION]` | 警示 |
+| 4 (黄色) | `[!TIP]` | 技巧 |
+| 5 (绿色) | `[!SUCCESS]` | 成功 |
+| 6 (蓝色) | `[!NOTE]` | 提示 |
+| 7 (紫色) | `[!IMPORTANT]` | 重要 |
+
+Callout 内部子块（段落、列表等）会在引用语法内逐行展示。
+
+### 公式导出
+
+- **块级公式**：独立行 `$formula$`
+- **行内公式**：段落内嵌 `$E = mc^2$`
+- 公式内容保持 LaTeX 原文，不做转义
+
+### 特殊字符处理
+
+导出时自动处理以下 Markdown 特殊字符：
+- 普通文本中的 `* _ [ ] # ~ $ > |` 会自动添加 `\` 转义
+- 代码块内的文本不做转义（使用原始文本）
+- 表格单元格中的 `|` 会转义为 `\|`
+- URL 中的括号 `(` `)` 会编码为 `%28` `%29`

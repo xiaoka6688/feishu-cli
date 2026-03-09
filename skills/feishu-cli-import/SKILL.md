@@ -3,7 +3,8 @@ name: feishu-cli-import
 description: >-
   从 Markdown 文件导入创建飞书文档。支持嵌套列表、Mermaid/PlantUML 图表自动转画板、
   大表格自动拆分、公式、Callout 高亮块。当用户请求"导入 Markdown"、"从 md 创建文档"、
-  "上传 Markdown"、"Markdown 转飞书"、"md 导入"时使用。
+  "从 md 文件创建文档"、"把 Markdown 转换到飞书"、"上传 Markdown"、"Markdown 转飞书"、
+  "md 导入"、"批量导入"时使用。
 argument-hint: <markdown_file> [--title "标题"] [--verbose]
 user-invocable: true
 allowed-tools: Bash, Read
@@ -12,6 +13,12 @@ allowed-tools: Bash, Read
 # Markdown 导入技能
 
 从本地 Markdown 文件创建或更新飞书云文档。**支持 Mermaid/PlantUML 图表转飞书画板、大表格自动拆分**。
+
+> **CRITICAL：** 每次创建新文档后，**必须立即**执行以下两步：
+> 1. 授予 `full_access` 权限：`feishu-cli perm add <document_id> --doc-type docx --member-type email --member-id user@example.com --perm full_access --notification`
+> 2. 转移文档所有权：`feishu-cli perm transfer-owner <document_id> --doc-type docx --member-type email --member-id user@example.com --notification`
+>
+> 详见下方"执行流程 → 创建新文档"。
 
 ## 核心特性
 
@@ -26,6 +33,11 @@ allowed-tools: Bash, Read
 ## 核心概念
 
 **Markdown 作为中间态**：本地文档与飞书云文档之间通过 Markdown 格式进行转换。
+
+## 前置条件
+
+- 已安装 feishu-cli 并完成认证（`feishu-cli auth login`，建议包含 `offline_access` scope）
+- Markdown 文件使用 UTF-8 编码
 
 ## 使用方法
 
@@ -55,11 +67,16 @@ allowed-tools: Bash, Read
 
 3. **添加权限**
    ```bash
-   feishu-cli perm add <document_id> --doc-type docx --member-type email --member-id user@example.com --perm full_access
+   feishu-cli perm add <document_id> --doc-type docx --member-type email --member-id user@example.com --perm full_access --notification
    ```
 
-4. **发送通知**
-   通知用户文档已创建
+4. **转移文档所有权**
+   ```bash
+   feishu-cli perm transfer-owner <document_id> --doc-type docx --member-type email --member-id user@example.com --notification
+   ```
+
+5. **发送通知**
+   发送飞书消息通知用户文档已创建
 
 ### 更新已有文档
 
@@ -211,30 +228,11 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 
 ## 已验证功能
 
-以下导入功能已通过测试验证：
+上述"支持的 Markdown 语法"中列出的所有语法均已通过测试验证，全部正常工作。特殊处理项：
 
-| Markdown 语法 | 导入状态 | 说明 |
-|--------------|---------|------|
-| 标题（# ~ ######） | ✅ 正常 | |
-| 段落文本 | ✅ 正常 | |
-| 无序列表（含嵌套） | ✅ 正常 | 支持无限深度嵌套 |
-| 有序列表（含嵌套） | ✅ 正常 | 支持无限深度嵌套 |
-| 混合嵌套列表 | ✅ 正常 | 有序/无序混合嵌套 |
-| 任务列表 | ✅ 正常 | |
-| 代码块 | ✅ 正常 | |
-| **Mermaid/PlantUML 图表** | ✅ 正常 | 自动转为飞书画板 |
-| **引用块** | ✅ 正常 | 转为 QuoteContainer，支持嵌套引用 |
-| **Callout 高亮块** | ✅ 正常 | 6 种类型，支持子块 |
-| 分割线 | ✅ 正常 | |
-| **粗体**/`*斜体*`/~~删除线~~ | ✅ 正常 | |
-| **下划线** (`<u>`) | ✅ 正常 | |
-| 行内代码 | ✅ 正常 | |
-| **行内公式** (`$...$`) | ✅ 正常 | 支持一段多个公式 |
-| **块级公式** (`$$...$$`) | ✅ 正常 | 创建为 Text 块内 Equation 元素 |
-| **表格** | ✅ 正常 | 超过 9 行或 9 列自动拆分 |
-| 链接 | ✅ 正常 | |
-| **图片** | ✅ 上传 | 默认通过 `--upload-images` 自动上传本地和网络图片；关闭时创建占位块 |
-| **内联图片** | ✅ 链接化 | 网络 URL 转可点击链接，本地路径转文本占位符 |
+- **图片**：默认通过 `--upload-images` 自动上传本地和网络图片；关闭时创建占位块
+- **内联图片**：网络 URL 转可点击链接，本地路径转文本占位符
+- **表格**：超过 9 行或 9 列自动拆分，行拆分保留表头，列拆分保留首列
 
 ### 大规模测试结果
 
@@ -275,3 +273,13 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 - 重试策略：固定 1s 间隔，Parse error 和 Invalid request parameter 不重试
 - 失败回退：删除空画板块，在原位置插入代码块
 - 支持的代码块标识：` ```mermaid `、` ```plantuml `、` ```puml `
+
+## 常见问题
+
+| 现象 | 原因 | 解决方式 |
+|------|------|----------|
+| 认证失败 / Token 过期 | 未登录或 Token 已失效 | 执行 `feishu-cli auth login --scopes "offline_access"` 重新认证 |
+| 图表降级为代码块 | Mermaid/PlantUML 语法不兼容飞书渲染引擎 | 参考 feishu-cli-doc-guide 规范调整语法（禁花括号、禁 par 等） |
+| 表格被拆分为多个 | 飞书 API 限制单表最多 9 行 / 9 列 | 属于正常行为，自动拆分并保留表头/首列 |
+| 图片上传失败 | 网络不通或图片 URL 不可访问 | 检查网络连通性；失败的图片会自动创建占位块，不影响整体导入 |
+| 文档创建成功但无法编辑 | 未执行权限添加和所有权转移步骤 | 执行 `perm add` + `perm transfer-owner`，详见"执行流程 → 创建新文档" |

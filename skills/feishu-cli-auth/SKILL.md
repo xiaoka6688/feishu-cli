@@ -5,6 +5,7 @@ description: >-
   Token 状态检查、scope 配置、自动刷新机制、搜索功能的 Token 依赖关系。
   当用户请求"登录飞书"、"获取 Token"、"OAuth 授权"、"auth login"、"认证"、
   "搜索需要什么权限"、"Token 过期了"、"刷新 Token"时使用。
+  当遇到权限错误（如 99991679 Unauthorized）、Token 过期、state 不匹配等问题时也应使用此技能。
   也适用于：搜索命令报权限错误、Token 相关的排错、需要判断当前授权状态的场景。
   当其他飞书技能（toolkit/msg/read 等）遇到 User Access Token 相关问题时，也应参考此技能。
 user-invocable: true
@@ -16,6 +17,8 @@ allowed-tools: Bash, Read
 feishu-cli 通过 OAuth 2.0 Authorization Code Flow 获取 User Access Token，用于搜索等需要用户身份的 API。
 
 ## 核心概念
+
+**Token 存储位置**：所有 OAuth Token 保存在 `~/.feishu-cli/token.json`，包括 Access Token、Refresh Token、过期时间和授权 scope。登录、刷新、退出等操作都围绕此文件进行。
 
 **两种身份**：
 - **App Access Token**（应用身份）：通过 app_id/app_secret 自动获取，大多数文档操作使用此身份
@@ -70,6 +73,14 @@ feishu-cli auth callback "<回调URL>" --state "<步骤1输出的state>"
 
 Token 自动保存到 `~/.feishu-cli/token.json`。
 
+### auth callback 常见错误
+
+| 错误 | 原因 | 解决 |
+|------|------|------|
+| `code has expired` | 授权 code 有效期约 5 分钟，用户复制回调 URL 太慢 | 重新执行步骤 1 获取新的授权 URL，提醒用户尽快完成 |
+| `state 不匹配` | `--state` 参数与回调 URL 中的 state 不一致，或混用了不同次 `--print-url` 的结果 | 确保 `--state` 使用的是同一次 `--print-url` 输出的 state 值 |
+| 网络超时 / 连接失败 | 无法访问飞书 OAuth 服务器（网络不通或代理问题） | 检查网络连通性，确认能访问 `open.feishu.cn`；如有代理需配置 `HTTPS_PROXY` |
+
 ### 完整示例
 
 ```bash
@@ -95,6 +106,10 @@ scope 决定了 Token 能访问哪些 API。登录时通过 `--scopes` 指定（
 offline_access search:docs:read search:message search:app wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly contact:user.base:readonly drive:drive.metadata:readonly
 ```
 
+### 为什么用最大 scope
+
+feishu-cli 的 wiki、calendar、task、msg 等命令通过 `resolveOptionalUserToken` 支持可选的用户身份。当 token.json 存在时，这些命令会**自动使用 User Access Token**。如果 Token 的 scope 不包含对应权限，API 会返回 99991679 错误（不会回退到应用身份）。一次性授权所有 scope 可以彻底避免此问题。
+
 ### Scope 完整说明
 
 | scope | 作用 | 对应命令 |
@@ -118,10 +133,6 @@ offline_access search:docs:read search:message search:app wiki:wiki:readonly cal
 | `contact:user.base:readonly` | 用户信息读取 | `user info/search` |
 | `drive:drive.metadata:readonly` | 文件元数据读取 | `file list/meta` |
 | `auth:user.id:read` | 用户身份信息 | 通常自动包含 |
-
-### 为什么用最大 scope
-
-feishu-cli 的 wiki、calendar、task、msg 等命令通过 `resolveOptionalUserToken` 支持可选的用户身份。当 token.json 存在时，这些命令会**自动使用 User Access Token**。如果 Token 的 scope 不包含对应权限，API 会返回 99991679 错误（不会回退到应用身份）。一次性授权所有 scope 可以彻底避免此问题。
 
 ### 前提条件
 
@@ -147,10 +158,9 @@ feishu-cli auth status
 feishu-cli auth status -o json
 ```
 
-JSON 输出示例：
+**当已登录且 Token 有效时：**
 
 ```json
-// 已登录，Token 有效
 {
   "logged_in": true,
   "access_token_valid": true,
@@ -159,8 +169,11 @@ JSON 输出示例：
   "refresh_token_expires_at": "2026-03-16T02:32:19+08:00",
   "scope": "auth:user.id:read search:docs:read search:message offline_access"
 }
+```
 
-// 未登录
+**当未登录时：**
+
+```json
 {"logged_in": false}
 ```
 

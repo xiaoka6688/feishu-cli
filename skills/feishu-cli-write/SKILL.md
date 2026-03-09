@@ -13,6 +13,8 @@ allowed-tools: Bash, Write, Read
 
 创建或更新飞书云文档，通过 Markdown 作为中间格式。**支持 Mermaid/PlantUML 图表自动转飞书画板**。
 
+> **前置条件**：使用前需先完成认证：`feishu-cli auth login`（OAuth 登录，建议包含 `offline_access` scope 以获取 30 天有效的 Refresh Token）。
+
 ## 快速创建空白文档
 
 最简方式创建一个新的飞书云文档：
@@ -74,6 +76,7 @@ feishu-cli doc create --title "文档标题" --output json
    ```
 
 4. **添加权限**（可选，给指定用户添加 full_access）
+   `full_access` 是最高权限，包含：管理协作者、编辑内容、管理文档设置（复制/移动/删除）、查看历史版本、导出等全部能力。
    ```bash
    feishu-cli perm add <document_id> --doc-type docx --member-type email --member-id user@example.com --perm full_access
    ```
@@ -184,7 +187,27 @@ feishu-cli doc add <document_id> /tmp/feishu_new_section.md \
 
 ### 推荐：使用 Mermaid / PlantUML 画图
 
-在文档中画图时，**推荐使用 Mermaid**（也支持 PlantUML），会自动转换为飞书画板：
+在文档中画图时，**推荐使用 Mermaid**（也支持 PlantUML），会自动转换为飞书画板。
+
+支持的 Mermaid 图表类型：
+- ✅ flowchart（流程图，支持 subgraph）
+- ✅ sequenceDiagram（时序图）
+- ✅ classDiagram（类图）
+- ✅ stateDiagram-v2（状态图）
+- ✅ erDiagram（ER 图）
+- ✅ gantt（甘特图）
+- ✅ pie（饼图）
+- ✅ mindmap（思维导图）
+
+**Mermaid 限制（必须遵守，否则导入失败）**：
+- ❌ 禁止在 flowchart 节点标签中使用 `{}` 花括号（如 `{version}`），会触发解析错误
+- ❌ 禁止使用 `par...and...end` 语法，飞书解析器完全不支持
+- ❌ 避免复杂度超限：10+ participant + 2+ alt 块 + 30+ 长消息标签会触发服务端 500
+- ✅ 安全阈值：participant ≤ 8、alt ≤ 1、消息标签尽量简短
+- ✅ `par` 替代方案：改用 `Note over X: 并行执行...`
+- ✅ 导入失败的图表会自动降级为代码块展示，不会丢失内容
+
+**示例**：
 
 ````markdown
 ```mermaid
@@ -203,23 +226,6 @@ Bob --> Alice: Hi
 @enduml
 ```
 ````
-
-支持的 Mermaid 图表类型：
-- ✅ flowchart（流程图，支持 subgraph）
-- ✅ sequenceDiagram（时序图）
-- ✅ classDiagram（类图）
-- ✅ stateDiagram-v2（状态图）
-- ✅ erDiagram（ER 图）
-- ✅ gantt（甘特图）
-- ✅ pie（饼图）
-- ✅ mindmap（思维导图）
-
-**Mermaid 注意事项**：
-- 避免在节点标签中使用 `{}` 花括号（如 `{version}`），会触发解析错误
-- **禁止使用 `par...and...end`**，飞书解析器完全不支持，改用 `Note over X: 并行执行...`
-- sequenceDiagram 渲染复杂度组合超限：10+ participant + 2+ alt 块 + 30+ 长消息标签会触发服务端 500
-- 安全阈值：participant ≤8、alt ≤1、消息标签尽量简短
-- 导入失败的图表会自动降级为代码块展示
 
 ### Callout 高亮块
 
@@ -282,10 +288,23 @@ feishu-cli doc add-callout <document_id> "提示内容" --callout-type info
 feishu-cli doc add-callout <document_id> "警告内容" --callout-type warning
 
 # 指定位置添加
-feishu-cli doc add-callout <document_id> "内容" --callout-type tip --parent-id <block_id> --index 0
+feishu-cli doc add-callout <document_id> "内容" --callout-type error --parent-id <block_id> --index 0
 ```
 
-Callout 类型：`info` (信息/蓝色), `warning` (警告/红色), `error` (错误/橙色), `success` (成功/绿色)
+**Callout 类型与颜色映射**：
+
+飞书 Callout 共 6 种颜色。**Markdown 导入**（`doc import`）使用 `[!TYPE]` 语法支持全部 6 种，**CLI 命令**（`doc add-callout --callout-type`）支持其中 4 种：
+
+| 颜色 | 背景色值 | Markdown 语法 | CLI `--callout-type` |
+|------|---------|--------------|---------------------|
+| 蓝色 | 6 | `[!NOTE]` | `info` |
+| 红色 | 2 | `[!WARNING]` | `error` |
+| 橙色 | 3 | `[!CAUTION]` | — |
+| 黄色 | 4 | `[!TIP]` | `warning` |
+| 绿色 | 5 | `[!SUCCESS]` | `success` |
+| 紫色 | 7 | `[!IMPORTANT]` | — |
+
+> 需要橙色（CAUTION）或紫色（IMPORTANT）时，请使用 Markdown 导入方式（`doc import` 或 `doc add --content-type markdown`）。
 
 ### 批量更新块
 
@@ -323,3 +342,13 @@ JSON 格式示例：
 # 更新现有文档
 /feishu-write <document_id>
 ```
+
+## 常见问题
+
+| 问题 | 原因与解决方案 |
+|------|--------------|
+| Mermaid 图表导入失败 | 图表会自动降级为代码块展示，不会丢失内容。检查是否使用了 `{}` 花括号、`par...and...end` 等不支持的语法 |
+| 权限添加失败 | 检查飞书开放平台中 App 是否已配置 `docs:permission.member:create` 权限，且应用已发布 |
+| 认证过期（401 错误） | 重新执行 `feishu-cli auth login`，建议包含 `offline_access` scope 以获取 30 天 Refresh Token |
+| 文档创建成功但无法访问 | 确认已执行 `perm add` 授予 `full_access` 权限并 `perm transfer-owner` 转移所有权 |
+| 表格内容显示不全 | 飞书 API 单个表格限制 9 行 9 列，超出部分会自动拆分为多个表格，属于正常行为 |

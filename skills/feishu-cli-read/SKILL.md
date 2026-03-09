@@ -1,9 +1,9 @@
 ---
 name: feishu-cli-read
 description: >-
-  读取飞书云文档或知识库内容，分析文档结构。当用户请求"查看"、"阅读"、"分析"、"读取"、
-  "打开"飞书文档或知识库时使用。支持通过文档 ID、知识库 Token 或 URL 读取。
-  Markdown 作为中间格式存储在 /tmp 目录。
+  只读操作，不修改文档内容。读取飞书云文档或知识库内容，分析文档结构。当用户请求"查看"、"阅读"、"分析"、"读取"、
+  "打开"、"read"、"view" 飞书文档或知识库时使用。支持通过文档 ID、知识库 Token 或 URL 读取。
+  Markdown 作为中间格式存储在 /tmp 目录。如需写入请使用 feishu-cli-write。
 argument-hint: <document_id|node_token|url>
 user-invocable: true
 allowed-tools: Bash, Read, Grep
@@ -12,6 +12,11 @@ allowed-tools: Bash, Read, Grep
 # 飞书文档阅读技能
 
 从飞书云文档或知识库读取内容，转换为 Markdown 格式后进行分析和展示。
+
+## 前置条件
+
+- 已完成认证（`feishu-cli auth login`）
+- 需要 `docx:document` 或 `wiki:wiki:readonly` 权限
 
 ## 核心概念
 
@@ -45,7 +50,7 @@ allowed-tools: Bash, Read, Grep
    feishu-cli wiki export <node_token> --output /tmp/feishu_wiki.md --download-images --assets-dir /tmp/feishu_assets
    ```
 
-   **重要**：务必使用 `--download-images` 参数下载文档中的图片到本地。
+   **重要**：务必使用 `--download-images` 参数下载文档中的图片到本地，否则只能看到 `feishu://media/<token>` 引用，无法理解图片内容。
 
    **可选参数**：
    - `--front-matter`：在 Markdown 顶部添加 YAML front matter（含标题和文档 ID）
@@ -57,16 +62,17 @@ allowed-tools: Bash, Read, Grep
    - 分析文档结构和文本内容
 
 4. **读取并理解图片内容**
-   - 检查 `/tmp/feishu_assets` 目录是否有下载的图片
-   - **使用 Read 工具逐个读取图片文件**，理解图片内容
+   - 检查 `--assets-dir` 指定的目录是否有下载的图片
+   - **使用 Read 工具逐个读取图片文件**（Claude 支持多模态，可直接理解图片内容）
    - 将图片内容整合到文档分析中
 
    ```bash
    # 列出下载的图片
    ls /tmp/feishu_assets/
 
-   # 使用 Read 工具查看图片（Claude 支持多模态）
+   # 使用 Read 工具查看图片
    # Read /tmp/feishu_assets/image_1.png
+   # Read /tmp/feishu_assets/image_2.png
    ```
 
 5. **报告结果**
@@ -79,7 +85,7 @@ allowed-tools: Bash, Read, Grep
 - 文档标题
 - 文档结构概要（标题层级）
 - 内容摘要（关键信息）
-- **图片内容描述**（如有图片）
+- 图片内容描述（如有图片）
 - Markdown 文件路径（供后续使用）
 - 图片文件路径（如有下载）
 
@@ -104,74 +110,25 @@ allowed-tools: Bash, Read, Grep
 /feishu-read https://xxx.feishu.cn/wiki/<node_token>
 ```
 
-## 图片处理流程（重要）
+## 导出格式说明
 
-文档中的图片需要特别处理才能理解其内容：
+导出的 Markdown 支持以下飞书特有块类型的转换：
 
-### 步骤 1：导出时下载图片
+| 飞书块类型 | Markdown 表现 |
+|-----------|--------------|
+| Callout 高亮块 | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert |
+| 块级/行内公式 | `$formula$`（LaTeX 格式） |
+| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 链接 |
+| ISV 块 (Mermaid) | 画板链接 |
+| QuoteContainer | `>` 引用语法（支持嵌套） |
+| AddOns/SyncedBlock | 透明展开子块内容 |
+| Iframe | `<iframe>` HTML 标签 |
 
-```bash
-# 知识库文档
-feishu-cli wiki export <node_token> \
-  --output /tmp/doc.md \
-  --download-images \
-  --assets-dir /tmp/doc_assets
+使用 `--highlight` 参数时，带颜色的文本输出为 `<span style="color:...">` 标签。
 
-# 普通文档
-feishu-cli doc export <document_id> \
-  --output /tmp/doc.md \
-  --download-images \
-  --assets-dir /tmp/doc_assets
-```
+## 高级：Wiki 目录节点处理
 
-### 步骤 2：检查下载的图片
-
-```bash
-ls -la /tmp/doc_assets/
-# 输出示例：
-# image_1.png  (403KB)
-# image_2.png  (394KB)
-```
-
-### 步骤 3：使用 Read 工具查看图片
-
-Claude 支持多模态，可以直接理解图片内容：
-
-```
-# 在 Claude 中使用 Read 工具读取图片
-Read /tmp/doc_assets/image_1.png
-Read /tmp/doc_assets/image_2.png
-```
-
-### 步骤 4：整合分析
-
-将图片内容与文档文本结合，提供完整的文档分析。
-
-## 完整示例
-
-```bash
-# 1. 导出文档和图片
-feishu-cli wiki export <node_token> \
-  -o /tmp/wiki_doc.md \
-  --download-images \
-  --assets-dir /tmp/wiki_assets
-
-# 2. 查看图片列表
-ls /tmp/wiki_assets/
-
-# 3. 读取 Markdown 内容
-# Read /tmp/wiki_doc.md
-
-# 4. 读取每张图片理解内容
-# Read /tmp/wiki_assets/image_1.png
-# Read /tmp/wiki_assets/image_2.png
-
-# 5. 综合分析后向用户报告
-```
-
-## 目录节点识别与处理
-
-知识库文档可能是**目录节点**（包含子节点），通过以下方式识别：
+知识库文档可能是**目录节点**（包含子节点），需要特殊处理。
 
 ### 1. 识别目录节点
 
@@ -223,7 +180,7 @@ feishu-cli wiki export <child_node_token_2> -o /tmp/child2.md
 | `code=131001, node not found` | 节点不存在 | 检查 token 是否正确 |
 | `code=131003, no permission` | 无权限访问 | 确认应用有 wiki:wiki:readonly 权限 |
 | `code=131004, space not found` | 知识空间不存在 | 检查 space_id 是否正确 |
-| 空内容或 `Unknown block type` | 特殊块类型 | 见「目录节点识别」章节 |
+| 空内容或 `Unknown block type` | 特殊块类型 | 见「高级：Wiki 目录节点处理」章节 |
 
 ### 2. 边界情况处理
 
@@ -258,27 +215,23 @@ feishu-cli wiki export <token> --debug
 sleep 5 && feishu-cli wiki export <token>
 ```
 
-## 导出格式说明
-
-导出的 Markdown 支持以下飞书特有块类型的转换：
-
-| 飞书块类型 | Markdown 表现 |
-|-----------|--------------|
-| Callout 高亮块 | `> [!NOTE]`、`> [!WARNING]` 等 6 种 GitHub-style alert |
-| 块级/行内公式 | `$formula$`（LaTeX 格式） |
-| 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 链接 |
-| ISV 块 (Mermaid) | 画板链接 |
-| QuoteContainer | `>` 引用语法（支持嵌套） |
-| AddOns/SyncedBlock | 透明展开子块内容 |
-| Iframe | `<iframe>` HTML 标签 |
-
-使用 `--highlight` 参数时，带颜色的文本输出为 `<span style="color:...">` 标签。
-
 ## 注意事项
 
-1. **务必下载图片**：不下载图片只能看到 `feishu://media/<token>` 引用，无法理解图片内容
-2. **逐个读取图片**：使用 Read 工具读取每张图片，Claude 会自动理解图片内容
-3. **整合分析**：将图片描述与文档文本结合，提供完整的内容摘要
-4. **识别目录节点**：目录节点的内容是子节点列表，不是实际文档内容
-5. **公式内容**：导出的 LaTeX 公式保持原文，可直接被 Markdown 渲染器显示
-6. **Callout 类型**：支持 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS 六种高亮块类型
+1. **识别目录节点**：目录节点的内容是子节点列表，不是实际文档内容
+2. **公式内容**：导出的 LaTeX 公式保持原文，可直接被 Markdown 渲染器显示
+3. **Callout 类型**：支持 NOTE/WARNING/TIP/CAUTION/IMPORTANT/SUCCESS 六种高亮块类型
+
+## 常见问题
+
+**Q: 提示权限不足 / `no permission`**
+- 确认应用已获得 `docx:document`（普通文档）或 `wiki:wiki:readonly`（知识库）权限
+- 在飞书开放平台的应用权限页面检查并申请所需权限
+
+**Q: 文档不存在 / `node not found`**
+- 检查文档 ID 或 node_token 是否正确（注意区分 `document_id` 和 `node_token`）
+- 从 URL 中提取 ID 时确认使用了正确的路径段（`/docx/` 后为 document_id，`/wiki/` 后为 node_token）
+
+**Q: Token 过期 / 认证失败**
+- 运行 `feishu-cli auth status` 检查当前认证状态
+- 如已过期，运行 `feishu-cli auth login` 重新认证
+- 如使用 App Access Token，检查 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 环境变量是否正确

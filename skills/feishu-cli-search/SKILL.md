@@ -6,7 +6,7 @@ description: >-
   也适用于：用户想查找某个主题的飞书文档或 Wiki、按关键词检索消息记录、查找内部应用。
   搜索 API 必须使用 User Access Token，本技能包含完整的认证前置检查流程。
 user-invocable: true
-allowed-tools: Bash, Read
+allowed-tools: Bash
 ---
 
 # 飞书搜索
@@ -36,8 +36,20 @@ feishu-cli auth status -o json
 
 ```bash
 # 步骤 A：生成授权 URL（最大 scope）
-feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message search:app wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly contact:user.base:readonly drive:drive.metadata:readonly"
+feishu-cli auth login --print-url --scopes \
+  "offline_access \
+   search:docs:read search:message search:app \
+   wiki:wiki:readonly \
+   calendar:calendar:read calendar:calendar.event:read \
+   calendar:calendar.event:create calendar:calendar.event:update \
+   calendar:calendar.event:reply calendar:calendar.free_busy:read \
+   task:task:read task:task:write \
+   task:tasklist:read task:tasklist:write \
+   im:message:readonly contact:user.base:readonly \
+   drive:drive.metadata:readonly"
 ```
+
+> **scope 命名说明**：飞书 OAuth scope 命名不完全统一，`search:docs:read` 带 `:read` 后缀，而 `search:message` 和 `search:app` 不带。这是飞书平台定义，非笔误。
 
 将输出的 `auth_url` 展示给用户，请用户在浏览器中完成授权。授权后浏览器跳转到无法访问的页面，让用户复制地址栏完整 URL。
 
@@ -95,6 +107,11 @@ feishu-cli search docs "数据报表" --docs-types sheet
 
 # 分页获取更多
 feishu-cli search docs "季度报告" --count 50
+
+# 分页查询：获取第一页（20 条）
+feishu-cli search docs "季度报告" --count 20 --offset 0
+# 分页查询：获取第二页
+feishu-cli search docs "季度报告" --count 20 --offset 20
 
 # JSON 格式输出（适合程序解析）
 feishu-cli search docs "产品需求" -o json
