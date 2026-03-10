@@ -3,8 +3,15 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
 
+	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // SendMessage sends a message to a user or chat
@@ -162,8 +169,17 @@ type ListMessagesResult struct {
 	HasMore   bool
 }
 
-// ListMessages lists messages in a container (chat)
+// ListMessages lists messages in a container (chat).
+// Note: The Feishu Go SDK (v3.5.3) incorrectly declares the List Messages API as
+// tenant_access_token only, but the API actually supports user_access_token as well.
+// When a user access token is provided, we use a raw HTTP request to bypass the SDK's
+// client-side token type validation. See: https://open.feishu.cn/document/server-docs/im-v1/message/list
 func ListMessages(containerID string, opts ListMessagesOptions, userAccessToken string) (*ListMessagesResult, error) {
+	// When user access token is provided, use raw HTTP to bypass SDK token type restriction
+	if userAccessToken != "" {
+		return listMessagesWithUserToken(containerID, opts, userAccessToken)
+	}
+
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -189,12 +205,86 @@ func ListMessages(containerID string, opts ListMessagesOptions, userAccessToken 
 		reqBuilder.PageToken(opts.PageToken)
 	}
 
-	resp, err := client.Im.Message.List(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
+	resp, err := client.Im.Message.List(Context(), reqBuilder.Build())
 	if err != nil {
 		return nil, fmt.Errorf("获取消息列表失败: %w", err)
 	}
 
 	if !resp.Success() {
+		return nil, fmt.Errorf("获取消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return &ListMessagesResult{
+		Items:     resp.Data.Items,
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}, nil
+}
+
+// listMessagesRawResponse represents the raw API response for list messages
+type listMessagesRawResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+	Data struct {
+		Items     []*larkim.Message `json:"items"`
+		HasMore   *bool             `json:"has_more"`
+		PageToken *string           `json:"page_token"`
+	} `json:"data"`
+}
+
+// listMessagesWithUserToken calls the List Messages API directly via HTTP,
+// bypassing the SDK's token type validation that incorrectly rejects user_access_token.
+func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, userAccessToken string) (*ListMessagesResult, error) {
+	cfg := config.Get()
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+
+	params := url.Values{}
+	params.Set("container_id_type", opts.ContainerIDType)
+	params.Set("container_id", containerID)
+	if opts.StartTime != "" {
+		params.Set("start_time", opts.StartTime)
+	}
+	if opts.EndTime != "" {
+		params.Set("end_time", opts.EndTime)
+	}
+	if opts.SortType != "" {
+		params.Set("sort_type", opts.SortType)
+	}
+	if opts.PageSize > 0 {
+		params.Set("page_size", strconv.Itoa(opts.PageSize))
+	}
+	if opts.PageToken != "" {
+		params.Set("page_token", opts.PageToken)
+	}
+
+	reqURL := fmt.Sprintf("%s/open-apis/im/v1/messages?%s", baseURL, params.Encode())
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("获取消息列表失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+userAccessToken)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	httpResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("获取消息列表失败: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("获取消息列表失败: 读取响应失败: %w", err)
+	}
+
+	var resp listMessagesRawResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("获取消息列表失败: 解析响应失败: %w", err)
+	}
+
+	if resp.Code != 0 {
 		return nil, fmt.Errorf("获取消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
@@ -309,7 +399,9 @@ type SearchChatsResult struct {
 	HasMore   bool
 }
 
-// SearchChats searches for chats
+// SearchChats searches for chats.
+// When query is provided, uses the Search API (server-side filtering).
+// When query is empty, falls back to List API with client-side filtering.
 func SearchChats(opts SearchChatsOptions, userAccessToken string) (*SearchChatsResult, error) {
 	client, err := GetClient()
 	if err != nil {
@@ -320,6 +412,53 @@ func SearchChats(opts SearchChatsOptions, userAccessToken string) (*SearchChatsR
 		opts.UserIDType = "open_id"
 	}
 
+	if opts.Query != "" {
+		return searchChatsWithSearchAPI(client, opts, userAccessToken)
+	}
+	return searchChatsWithListAPI(client, opts, userAccessToken)
+}
+
+// searchChatsWithSearchAPI uses GET /open-apis/im/v1/chats/search for server-side query filtering.
+func searchChatsWithSearchAPI(client *lark.Client, opts SearchChatsOptions, userAccessToken string) (*SearchChatsResult, error) {
+	reqBuilder := larkim.NewSearchChatReqBuilder().
+		UserIdType(opts.UserIDType).
+		Query(opts.Query)
+
+	if opts.PageSize > 0 {
+		reqBuilder.PageSize(opts.PageSize)
+	}
+	if opts.PageToken != "" {
+		reqBuilder.PageToken(opts.PageToken)
+	}
+
+	resp, err := client.Im.Chat.Search(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("搜索群聊失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("搜索群聊失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	result := &SearchChatsResult{
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}
+	for _, chat := range resp.Data.Items {
+		result.Items = append(result.Items, &ChatInfo{
+			ChatID:      StringVal(chat.ChatId),
+			Name:        StringVal(chat.Name),
+			Description: StringVal(chat.Description),
+			OwnerID:     StringVal(chat.OwnerId),
+			External:    BoolVal(chat.External),
+		})
+	}
+
+	return result, nil
+}
+
+// searchChatsWithListAPI uses GET /open-apis/im/v1/chats to list all chats (no query).
+func searchChatsWithListAPI(client *lark.Client, opts SearchChatsOptions, userAccessToken string) (*SearchChatsResult, error) {
 	reqBuilder := larkim.NewListChatReqBuilder().
 		UserIdType(opts.UserIDType)
 
@@ -344,18 +483,13 @@ func SearchChats(opts SearchChatsOptions, userAccessToken string) (*SearchChatsR
 		HasMore:   BoolVal(resp.Data.HasMore),
 	}
 	for _, chat := range resp.Data.Items {
-		info := &ChatInfo{
+		result.Items = append(result.Items, &ChatInfo{
 			ChatID:      StringVal(chat.ChatId),
 			Name:        StringVal(chat.Name),
 			Description: StringVal(chat.Description),
 			OwnerID:     StringVal(chat.OwnerId),
 			External:    BoolVal(chat.External),
-		}
-
-		// Filter by query if specified
-		if opts.Query == "" || containsIgnoreCase(info.Name, opts.Query) || containsIgnoreCase(info.Description, opts.Query) {
-			result.Items = append(result.Items, info)
-		}
+		})
 	}
 
 	return result, nil

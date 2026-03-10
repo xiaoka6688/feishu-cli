@@ -99,7 +99,7 @@ feishu-cli chat member remove <chat_id> \
 | 权限 | 说明 |
 |------|------|
 | `im:chat` | 群聊创建/修改/删除 |
-| `im:chat:readonly` | 群聊信息读取 |
+| `im:chat:read` | 群聊信息读取 |
 | `im:chat:member` | 群成员添加/移除 |
 
 ## 示例场景

@@ -38,18 +38,18 @@ feishu-cli auth status -o json
 # 步骤 A：生成授权 URL（最大 scope）
 feishu-cli auth login --print-url --scopes \
   "offline_access \
-   search:docs:read search:message search:app \
+   search:docs:read search:message drive:drive.search:readonly \
    wiki:wiki:readonly \
    calendar:calendar:read calendar:calendar.event:read \
    calendar:calendar.event:create calendar:calendar.event:update \
    calendar:calendar.event:reply calendar:calendar.free_busy:read \
    task:task:read task:task:write \
    task:tasklist:read task:tasklist:write \
-   im:message:readonly contact:user.base:readonly \
+   im:message:readonly im:chat:read contact:user.base:readonly \
    drive:drive.metadata:readonly"
 ```
 
-> **scope 命名说明**：飞书 OAuth scope 命名不完全统一，`search:docs:read` 带 `:read` 后缀，而 `search:message` 和 `search:app` 不带。这是飞书平台定义，非笔误。
+> **scope 命名说明**：飞书 OAuth scope 命名不完全统一，`search:docs:read` 带 `:read` 后缀，而 `search:message` 不带。这是飞书平台定义，非笔误。
 
 将输出的 `auth_url` 展示给用户，请用户在浏览器中完成授权。授权后浏览器跳转到无法访问的页面，让用户复制地址栏完整 URL。
 
@@ -198,7 +198,7 @@ feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
 
 ## 搜索应用
 
-搜索飞书应用。**scope: `search:app`**
+搜索飞书应用。**注意：搜索应用的 scope 需在飞书开发者后台确认是否可用，部分应用可能未开通此权限。**
 
 ```bash
 feishu-cli search apps "关键词" [选项]
@@ -227,7 +227,7 @@ feishu-cli search apps "OKR" --page-size 50
 |------|------|------|
 | "缺少 User Access Token" | 从未登录 | 执行两步式登录流程 |
 | "User Access Token 已过期" | access + refresh token 都过期 | 重新登录 |
-| 99991679 权限错误提到 `search:app` | 登录时未包含 `search:app` scope | 重新登录，scope 加上 `search:app` |
+| 99991679 权限错误提到搜索应用 | 应用未开通搜索应用权限，或该 scope 在开发者后台不可用 | 在飞书开发者后台确认是否已开通对应权限 |
 | 99991679 权限错误提到 `search:docs:read` | 登录时未包含 `search:docs:read` scope | 重新登录，scope 加上 `search:docs:read` |
 | 搜索结果为空 | 关键词不匹配或无权限文档 | 尝试更宽泛的关键词，或检查文档权限 |
 | offset + count 超过 200 | 飞书 API 限制 | 最多翻到第 200 条结果 |

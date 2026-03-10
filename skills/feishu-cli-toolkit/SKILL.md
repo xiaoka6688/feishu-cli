@@ -201,7 +201,7 @@ feishu-cli chat member remove <chat_id> --id-list id1,id2 [--member-id-type open
 
 **详细参考**：读取 `references/chat-commands.md` 获取完整参数和示例。
 
-**权限要求**：`im:chat`（群聊管理）、`im:chat:readonly`（读取）、`im:chat:member`（成员操作）
+**权限要求**：`im:chat`（群聊管理）、`im:chat:read`（读取）、`im:chat:member`（成员操作）
 
 ---
 
@@ -487,7 +487,7 @@ feishu-cli search docs "关键词" \
 搜索 API 必须使用 User Access Token。**完整的认证流程、scope 配置、排错指南请参考 `feishu-cli-auth` 技能**。
 
 快速参考：
-- 推荐 scope：`search:docs:read search:message offline_access`（`search:app` 按需添加）
+- 推荐 scope：`search:docs:read search:message offline_access`
 - AI Agent 使用两步式非交互登录：`auth login --print-url` + `auth callback`
 - Token 有效期 2 小时，Refresh Token 30 天（需 `offline_access` scope）
 - 登录后无需手动传 Token，过期自动刷新
@@ -696,7 +696,7 @@ rm -f "$TMP_MD"
 | 电子表格 | `sheets:spreadsheet` |
 | 日历 | `calendar:calendar:readonly`、`calendar:calendar` |
 | 任务 | `task:task:read`、`task:task:write`、`task:tasklist:read`、`task:tasklist:write` |
-| 群聊 | `im:chat`、`im:chat:readonly`、`im:chat:member` |
+| 群聊 | `im:chat`、`im:chat:read`、`im:chat:member` |
 | 画板 | `board:board` |
 | 文件 | `drive:drive`、`drive:drive:readonly` |
 | 素材 | `drive:drive`、`drive:drive:readonly` |
