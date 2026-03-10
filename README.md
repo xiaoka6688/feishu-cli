@@ -579,7 +579,15 @@ feishu-cli dept children <department_id>
 | `feishu-cli-search` | 搜索飞书文档 / 消息 / 应用 | "搜索飞书文档" |
 | `feishu-cli-doc-guide` | 飞书文档创建规范 | 其他技能内部引用 |
 
-**使用方法**：将 `skills/` 目录复制到你的 Claude Code 项目中（或放在 `~/.claude/skills/`），AI 助手即可通过自然语言操作飞书。
+**安装方法**：
+
+```bash
+# 一键安装全部技能（推荐）
+npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
+
+# 或手动复制
+# 将 skills/ 目录复制到 ~/.claude/skills/
+```
 
 ## 块类型映射
 
