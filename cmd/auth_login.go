@@ -50,7 +50,7 @@ Authorization Code Flow 前置条件:
   feishu-cli auth callback "<回调URL>" --state "<state>"
 
   # Device Flow（无需配置重定向 URL 白名单）
-  feishu-cli auth login --device`,
+  feishu-cli auth login --method device`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
@@ -58,11 +58,15 @@ Authorization Code Flow 前置条件:
 
 		cfg := config.Get()
 		scopes, _ := cmd.Flags().GetString("scopes")
-		device, _ := cmd.Flags().GetBool("device")
+		method, _ := cmd.Flags().GetString("method")
 
-		// Device Flow 分支（不使用 --scopes，服务端自动授予默认权限）
-		if device {
+		switch method {
+		case "device":
 			return runDeviceFlow(cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+		case "code", "":
+			// Authorization Code Flow，继续往下
+		default:
+			return fmt.Errorf("不支持的授权方式 %q，可选值: code, device", method)
 		}
 
 		// Authorization Code Flow
@@ -183,5 +187,5 @@ func init() {
 	authLoginCmd.Flags().Bool("no-manual", false, "强制使用本地回调模式（Authorization Code Flow）")
 	authLoginCmd.Flags().Bool("print-url", false, "仅输出授权 URL 和 state（Authorization Code Flow 非交互模式）")
 	authLoginCmd.Flags().String("scopes", "", "请求的 OAuth scope（空格分隔，如 \"search:docs:read offline_access\"）")
-	authLoginCmd.Flags().Bool("device", false, "使用 Device Flow（RFC 8628），无需配置重定向 URL")
+	authLoginCmd.Flags().String("method", "code", "授权方式：code（Authorization Code Flow）或 device（Device Flow，无需配置重定向 URL）")
 }

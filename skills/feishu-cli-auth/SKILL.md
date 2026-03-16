@@ -267,7 +267,7 @@ feishu-cli auth login --scopes "offline_access search:docs:read search:message d
 feishu-cli auth login --manual --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
 
 # Device Flow：无需在飞书开放平台配置重定向 URL 白名单
-feishu-cli auth login --device
+feishu-cli auth login --method device
 ```
 
 ### Authorization Code Flow 前置条件
@@ -285,7 +285,7 @@ Device Flow（`--device`）无需此配置。
 
 `--device` 是 Authorization Code Flow 的平替方案，区别仅在于无需配置重定向 URL 白名单：
 
-1. 执行 `feishu-cli auth login --device`
+1. 执行 `feishu-cli auth login --method device`
 2. 终端显示用户码和验证链接，在浏览器中打开链接并输入用户码完成授权
 3. 命令自动轮询等待授权完成，成功后保存 Token
 

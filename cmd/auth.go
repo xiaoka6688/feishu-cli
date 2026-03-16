@@ -16,7 +16,7 @@ var authCmd = &cobra.Command{
   feishu-cli auth login
 
   # Device Flow（无需配置重定向 URL 白名单）
-  feishu-cli auth login --device
+  feishu-cli auth login --method device
 
   # 查看授权状态
   feishu-cli auth status
