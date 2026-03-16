@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// TestFormatUserCode 测试用户码格式化
+// TestFormatUserCode 测试 Device Flow 用户码格式化
 func TestFormatUserCode(t *testing.T) {
 	cases := []struct {
 		input string
