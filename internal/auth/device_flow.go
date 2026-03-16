@@ -187,27 +187,27 @@ func PollDeviceToken(appID, appSecret, baseURL, deviceCode string, interval, exp
 
 		req, err := http.NewRequest("POST", tokenURL, strings.NewReader(formBody.Encode()))
 		if err != nil {
-			currentInterval = deviceFlowMin(currentInterval+1, maxPollInterval)
+			currentInterval = min(currentInterval+1, maxPollInterval)
 			continue
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
-			currentInterval = deviceFlowMin(currentInterval+1, maxPollInterval)
+			currentInterval = min(currentInterval+1, maxPollInterval)
 			continue
 		}
 
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		resp.Body.Close()
 		if err != nil {
-			currentInterval = deviceFlowMin(currentInterval+1, maxPollInterval)
+			currentInterval = min(currentInterval+1, maxPollInterval)
 			continue
 		}
 
 		var raw map[string]interface{}
 		if err := json.Unmarshal(body, &raw); err != nil {
-			currentInterval = deviceFlowMin(currentInterval+1, maxPollInterval)
+			currentInterval = min(currentInterval+1, maxPollInterval)
 			continue
 		}
 
@@ -240,7 +240,7 @@ func PollDeviceToken(appID, appSecret, baseURL, deviceCode string, interval, exp
 		case "authorization_pending":
 			continue
 		case "slow_down":
-			currentInterval = deviceFlowMin(currentInterval+5, maxPollInterval)
+			currentInterval = min(currentInterval+5, maxPollInterval)
 			continue
 		case "access_denied":
 			return nil, fmt.Errorf("用户拒绝了授权")
@@ -279,11 +279,4 @@ func deviceFlowTruncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
-}
-
-func deviceFlowMin(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
