@@ -257,7 +257,7 @@ feishu-cli task create --summary "待办事项"
 
 ## 其他登录模式
 
-除 AI Agent 的两步式外，还有两种人类用户直接使用的模式（同样使用最大 scope）：
+除 AI Agent 的两步式外，还有三种人类用户直接使用的模式：
 
 ```bash
 # 本地桌面环境（默认）：自动打开浏览器 + 本地 HTTP 回调
@@ -265,9 +265,12 @@ feishu-cli auth login --scopes "offline_access search:docs:read search:message d
 
 # 远程 SSH 环境：打印 URL，用户手动粘贴回调 URL（交互式 stdin）
 feishu-cli auth login --manual --scopes "offline_access search:docs:read search:message drive:drive.search:readonly wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly im:message.group_msg:get_as_user im:chat:read contact:user.base:readonly drive:drive.metadata:readonly"
+
+# Device Flow：无需在飞书开放平台配置重定向 URL 白名单
+feishu-cli auth login --device
 ```
 
-### 前置条件
+### Authorization Code Flow 前置条件
 
 在飞书开放平台 → 应用详情 → 安全设置 → 重定向 URL 中添加：
 ```
@@ -275,6 +278,18 @@ http://127.0.0.1:9768/callback
 ```
 
 如果使用自定义端口（`--port 8080`），需添加对应的重定向 URL。
+
+Device Flow（`--device`）无需此配置。
+
+### Device Flow 说明
+
+`--device` 是 Authorization Code Flow 的平替方案，区别仅在于无需配置重定向 URL 白名单：
+
+1. 执行 `feishu-cli auth login --device`
+2. 终端显示用户码和验证链接，在浏览器中打开链接并输入用户码完成授权
+3. 命令自动轮询等待授权完成，成功后保存 Token
+
+**注意**：Device Flow 不支持指定 scope，服务端按应用已开通的权限授予。如需特定 scope，请改用标准 `auth login` 并配置重定向 URL 白名单。
 
 ---
 
