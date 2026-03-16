@@ -32,17 +32,24 @@ Authorization Code Flow 前置条件:
   http://127.0.0.1:9768/callback
 
 示例:
-  # 自动检测环境（Authorization Code Flow）
+  # 自动检测环境
   feishu-cli auth login
 
   # 强制手动模式（SSH 远程环境）
   feishu-cli auth login --manual
 
+  # 指定端口
+  feishu-cli auth login --port 8080
+
+  # 指定 scope（建议带 offline_access 以获取 refresh_token）
+  feishu-cli auth login --scopes "search:docs:read search:message offline_access"
+
   # 非交互模式（AI Agent 推荐）
   feishu-cli auth login --print-url
+  # 然后用户在浏览器完成授权后执行:
   feishu-cli auth callback "<回调URL>" --state "<state>"
 
-  # Device Flow（无需重定向 URL）
+  # Device Flow（无需重定向 URL，适合无头环境）
   feishu-cli auth login --device`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
