@@ -27,6 +27,9 @@ vendor/
 .DS_Store
 Thumbs.db
 
+# GitHub 临时文件（PR 截图等）
+.github/
+
 # 配置文件（包含敏感信息）
 .env
 *.env.local

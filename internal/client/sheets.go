@@ -66,7 +66,7 @@ type CellStyle struct {
 	HAlign     string      `json:"hAlign,omitempty"`     // LEFT, CENTER, RIGHT
 	VAlign     string      `json:"vAlign,omitempty"`     // TOP, MIDDLE, BOTTOM
 	Formatter  string      `json:"formatter,omitempty"`  // 数字格式
-	BgColor    string      `json:"bgColor,omitempty"`    // 背景色
+	BackColor  string      `json:"backColor,omitempty"`  // 背景色
 	ForeColor  string      `json:"foreColor,omitempty"`  // 前景色
 	BorderType string      `json:"borderType,omitempty"` // 边框类型
 	Clean      bool        `json:"clean,omitempty"`      // 是否清除样式
@@ -1228,8 +1228,8 @@ func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style 
 	if style.Formatter != "" {
 		appendStyle["formatter"] = style.Formatter
 	}
-	if style.BgColor != "" {
-		appendStyle["bgColor"] = style.BgColor
+	if style.BackColor != "" {
+		appendStyle["backColor"] = style.BackColor
 	}
 	if style.ForeColor != "" {
 		appendStyle["foreColor"] = style.ForeColor

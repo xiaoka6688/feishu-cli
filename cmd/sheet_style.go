@@ -59,7 +59,7 @@ var sheetStyleCmd = &cobra.Command{
 		style := &client.CellStyle{
 			HAlign:    hAlign,
 			VAlign:    vAlign,
-			BgColor:   bgColor,
+			BackColor: bgColor,
 			ForeColor: foreColor,
 			Formatter: formatter,
 			Clean:     clean,
