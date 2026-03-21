@@ -38,6 +38,7 @@ var rootCmd = &cobra.Command{
   comment   评论操作（列出、添加、删除评论）
   perm      权限操作（添加、更新权限）
   msg       消息操作（发送消息、搜索群聊、会话历史）
+  bitable   多维表格操作（数据表、字段、记录、视图管理）
   task      任务操作（创建、查看、更新、完成）
   calendar  日历操作（日历、日程管理）
   search    搜索操作（消息、应用搜索，需要用户授权）

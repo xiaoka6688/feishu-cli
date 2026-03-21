@@ -30,6 +30,7 @@ feishu-cli/
 │   ├── wiki.go                   # 知识库命令组
 │   ├── msg.go                    # 消息命令组
 │   ├── sheet_*.go                # 电子表格命令（V2/V3 API）
+│   ├── bitable*.go               # 多维表格命令（Base API）
 │   ├── calendar.go               # 日历命令组
 │   ├── task.go                   # 任务命令组
 │   └── utils.go                  # 公共工具（printJSON 等）
@@ -45,6 +46,7 @@ feishu-cli/
 │   │   ├── docx.go               # 文档 API（含 FillTableCells）
 │   │   ├── board.go              # 画板 API（Mermaid/PlantUML 导入）
 │   │   ├── sheets.go             # 电子表格 API
+│   │   ├── bitable.go            # 多维表格 API（Base）
 │   │   └── ...                   # wiki/drive/message/calendar/task 等
 │   ├── converter/                # Markdown 转换器
 │   │   ├── block_to_markdown.go  # Block → Markdown（导出）
@@ -221,6 +223,28 @@ feishu-cli sheet read <token> "Sheet1!A1:C10"
 feishu-cli sheet write <token> "Sheet1!A1:B2" --data '[["姓名","年龄"],["张三",25]]'
 feishu-cli sheet read-rich <token> <sheet_id> "sheet!A1:C10"   # V3 富文本
 feishu-cli sheet write-rich <token> <sheet_id> --data-file data.json
+
+# === 多维表格（Bitable） ===
+feishu-cli bitable create --name "项目管理"                       # 创建多维表格
+feishu-cli bitable get <app_token>                               # 获取多维表格信息
+feishu-cli bitable tables <app_token>                            # 列出数据表
+feishu-cli bitable create-table <app_token> --name "任务表"       # 创建数据表
+feishu-cli bitable rename-table <app_token> <table_id> --name "新名" # 重命名数据表
+feishu-cli bitable delete-table <app_token> <table_id>            # 删除数据表
+feishu-cli bitable fields <app_token> <table_id>                  # 列出字段
+feishu-cli bitable create-field <app_token> <table_id> --field '{"field_name":"状态","type":3}'
+feishu-cli bitable update-field <app_token> <table_id> <field_id> --field '{"field_name":"新名","type":1}'
+feishu-cli bitable delete-field <app_token> <table_id> <field_id>
+feishu-cli bitable records <app_token> <table_id>                 # 搜索/列出记录
+feishu-cli bitable records <app_token> <table_id> --filter '{"conjunction":"and","conditions":[{"field_name":"状态","operator":"is","value":["进行中"]}]}'
+feishu-cli bitable get-record <app_token> <table_id> <record_id>
+feishu-cli bitable add-record <app_token> <table_id> --fields '{"名称":"测试","金额":100}'
+feishu-cli bitable add-records <app_token> <table_id> --data-file records.json  # 批量（最多 500 条）
+feishu-cli bitable update-record <app_token> <table_id> <record_id> --fields '{"状态":"已完成"}'
+feishu-cli bitable delete-records <app_token> <table_id> --record-ids "rec1,rec2"
+feishu-cli bitable views <app_token> <table_id>                   # 列出视图
+feishu-cli bitable create-view <app_token> <table_id> --name "看板" --type kanban
+feishu-cli bitable delete-view <app_token> <table_id> <view_id>
 
 # === 权限管理 ===
 feishu-cli perm add <doc_id> --doc-type docx --member-type email --member-id user@example.com --perm full_access
@@ -405,7 +429,7 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 
 ## Claude Code 技能
 
-本项目提供以下 Claude Code 技能，位于 `skills/` 目录（11 个技能）：
+本项目提供以下 Claude Code 技能，位于 `skills/` 目录（12 个技能）：
 
 | 技能 | 说明 | 用法 |
 |------|------|------|
@@ -417,6 +441,7 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 | `/feishu-cli-msg` | 消息全功能管理（发送/回复/转发/Reaction/Pin） | `/feishu-cli-msg <receive_id>` |
 | `/feishu-cli-toolkit` | 综合工具箱（表格/日历/任务/群聊/文件/素材/评论/知识库/搜索/通讯录/**附件下载**） | `/feishu-cli-toolkit` |
 | `/feishu-cli-board` | 画板操作（精排绘图/Mermaid 导入/截图/节点管理） | `/feishu-cli-board` |
+| `/feishu-cli-bitable` | 多维表格操作（数据表/字段/记录/视图管理） | `/feishu-cli-bitable` |
 | `/feishu-cli-auth` | OAuth 认证、Token 管理、scope 配置、搜索权限排错 | `/feishu-cli-auth` |
 | `/feishu-cli-search` | 搜索飞书文档/消息/应用（含 Token 前置检查流程） | `/feishu-cli-search` |
 | `feishu-cli-doc-guide` | 飞书文档创建规范（内部参考，不可直接调用） | — |
@@ -424,6 +449,7 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 ### 支持的 URL 格式
 
 - 普通文档: `https://xxx.feishu.cn/docx/<document_id>`
+- 多维表格: `https://xxx.feishu.cn/base/<app_token>`
 - 知识库: `https://xxx.feishu.cn/wiki/<node_token>`
 - 内部飞书: `https://xxx.larkoffice.com/wiki/<node_token>`
 - Lark 国际版: `https://xxx.larksuite.com/wiki/<node_token>`
@@ -451,6 +477,7 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 | 部分搜索 | `directory:department:search` | 需单独申请 |
 | 画板操作 | `board:whiteboard` | 画板读写 |
 | 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
+| 多维表格 | `bitable:app` | 多维表格读写 |
 | 日历 | `calendar:calendar` | 需单独申请 |
 | 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
 | 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
@@ -608,6 +635,7 @@ feishu-cli perm add <DOC_ID> --doc-type docx --member-type email --member-id use
 ✅ sheet add-sheet/delete-sheet/copy-sheet/add-rows/add-cols/delete-rows/delete-cols
 ✅ sheet merge/unmerge/style/meta/find/replace/image
 ✅ sheet read-plain/read-rich/write-rich/insert/append-rich/clear（V3 API）
+⬜ bitable create/get/tables/fields/records/views（待验证）
 ✅ calendar get/primary/event-search/event-reply/attendee/freebusy
 ✅ user search/list + dept get/children
 ✅ auth login/status/logout（OAuth 2.0 授权、Token 自动刷新）
