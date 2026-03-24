@@ -36,7 +36,8 @@ allowed-tools: Bash, Read
 
 ## 前置条件
 
-- 已安装 feishu-cli 并配置 App Token（`FEISHU_APP_ID` + `FEISHU_APP_SECRET`），无需 `auth login`
+- **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
+- 已配置 App Token（`FEISHU_APP_ID` + `FEISHU_APP_SECRET`），无需 `auth login`
 - Markdown 文件使用 UTF-8 编码
 
 ## 使用方法

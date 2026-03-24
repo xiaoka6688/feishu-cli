@@ -16,6 +16,8 @@ allowed-tools: Bash, Read
 
 feishu-cli 通过 OAuth 2.0 Authorization Code Flow 获取 User Access Token，用于搜索等需要用户身份的 API。
 
+> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
+
 ## 核心概念
 
 **Token 存储位置**：所有 OAuth Token 保存在 `~/.feishu-cli/token.json`，包括 Access Token、Refresh Token、过期时间和授权 scope。登录、刷新、退出等操作都围绕此文件进行。

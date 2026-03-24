@@ -17,6 +17,8 @@ allowed-tools: Bash, Read, Write
 
 通过 feishu-cli 发送飞书消息、回复、转发、Reaction、Pin 等互动操作。
 
+> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
+
 > **查看聊天记录？** 请使用 **feishu-cli-chat** 技能（msg history/list/get/search-chats/群管理）。本技能专注于消息的发送与互动操作。
 
 ## 核心概念

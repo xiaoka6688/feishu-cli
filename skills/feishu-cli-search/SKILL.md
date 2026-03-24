@@ -13,6 +13,8 @@ allowed-tools: Bash
 
 搜索飞书云文档、消息和应用。所有搜索命令**必须使用 User Access Token**。
 
+> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
+
 ## 执行流程
 
 每次执行搜索前，按以下流程操作：

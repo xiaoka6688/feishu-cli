@@ -16,6 +16,7 @@ allowed-tools: Bash, Read
 
 ## 前置条件
 
+- **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
 - 需要已配置飞书应用凭证（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`），通过环境变量或 `~/.feishu-cli/config.yaml` 设置
 - App 权限：需要 `docx:document` 或 `docx:document:readonly`（文档导出）、`wiki:wiki:readonly`（知识库导出）
 - User Token 权限：若 App 无权访问他人文档，需通过 `feishu-cli auth login --scopes "docx:document:readonly offline_access"` 授权，`doc export` 会自动读取保存的 User Token

@@ -17,6 +17,7 @@ allowed-tools: Bash, Read, Write
 
 ## 前置条件
 
+- **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
 - **认证**：需要有效的 App Access Token（环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET`，或 `~/.feishu-cli/config.yaml`）
 - **权限**：应用需开通 `board:whiteboard`（画板读写）和 `docx:document`（文档中添加画板）
 - **验证**：`feishu-cli auth status` 确认认证状态正常

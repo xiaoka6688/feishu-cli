@@ -13,6 +13,8 @@ allowed-tools: Bash, Write, Read
 
 创建或更新飞书云文档，通过 Markdown 作为中间格式。**支持 Mermaid/PlantUML 图表自动转飞书画板**。
 
+> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
+>
 > **前置条件**：使用 App Token（应用身份），只需配置 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET`（环境变量或 config.yaml），无需 `auth login`。
 
 ## 快速创建空白文档

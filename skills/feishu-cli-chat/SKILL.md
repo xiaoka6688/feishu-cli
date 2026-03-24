@@ -24,6 +24,8 @@ allowed-tools: Bash, Read, Write
 
 ## 前置条件
 
+- **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
+
 本技能的核心命令**必须使用 User Token**，使用前需先登录。`chat create`、`chat link`、`msg read-users` 使用 App Token，属于 feishu-cli-toolkit 技能。
 
 ```bash

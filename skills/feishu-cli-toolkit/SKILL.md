@@ -17,6 +17,8 @@ allowed-tools: Bash, Read, Write
 
 覆盖 feishu-cli 的 13 个功能模块，提供命令速查和核心用法。复杂模块的详细参考文档在 `references/` 目录中。
 
+> **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
+
 ## 模块速查表
 
 | # | 模块 | 核心命令 | 详细参考 |
