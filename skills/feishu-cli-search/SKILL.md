@@ -47,7 +47,7 @@ feishu-cli auth login --print-url --scopes \
    calendar:calendar.event:reply calendar:calendar.free_busy:read \
    task:task:read task:task:write \
    task:tasklist:read task:tasklist:write \
-   im:message:readonly im:message.group_msg:get_as_user im:chat:read im:chat:readonly im:chat.members:read contact:user.base:readonly \
+   im:message:readonly im:message.group_msg:get_as_user im:chat:read im:chat.members:read contact:user.base:readonly \
    drive:drive.metadata:readonly"
 ```
 

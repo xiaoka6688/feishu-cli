@@ -302,7 +302,7 @@ feishu-cli chat member list oc_xxx --member-id-type user_id
 feishu-cli chat member list oc_xxx --page-size 100 --page-token "xxx"
 ```
 
-> **Scope 要求**：使用 User Token 时需要 `im:chat:readonly` 或 `im:chat.members:read` scope。若报 99991679 错误，需通过 `auth login --scopes "... im:chat:readonly"` 重新授权。
+> **Scope 要求**：使用 User Token 时需要 `im:chat:read` 或 `im:chat.members:read` scope。若报 99991679 错误，需通过 `auth login --scopes "... im:chat:read"` 重新授权。
 
 ### 修改群信息
 
@@ -468,7 +468,7 @@ text = content.get('text', '')
 | `im:message.reactions` | 消息 Reaction | msg reaction add/remove/list |
 | `im:message` | 消息读写 | msg delete |
 | `im:chat:read` | 群聊搜索 | msg search-chats |
-| `im:chat:readonly` | 群聊信息只读 | chat get、chat member list |
+| `im:chat:read` | 群聊信息只读 | chat get、chat member list |
 | `im:chat.members:read` | 群成员读取 | chat member list |
 | `im:chat` | 群聊管理 | chat update/delete |
 | `im:chat.members` | 群成员管理 | chat member add/remove |
