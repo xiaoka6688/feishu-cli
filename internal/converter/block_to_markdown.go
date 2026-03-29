@@ -79,7 +79,7 @@ func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *Block
 					collectChildren(childID)
 				}
 			}
-		case BlockTypeBullet, BlockTypeOrdered:
+		case BlockTypeBullet, BlockTypeOrdered, BlockTypeTodo:
 			// 嵌套列表：子块由父列表递归处理
 			if block.Children != nil {
 				for _, childID := range block.Children {
@@ -322,7 +322,7 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 	case BlockTypeEquation:
 		return c.convertEquation(block)
 	case BlockTypeTodo:
-		return c.convertTodo(block)
+		return c.convertTodoWithDepth(block, indent, depth)
 	case BlockTypeDivider:
 		return "---\n", nil
 	case BlockTypeImage:
@@ -711,6 +711,10 @@ func (c *BlockToMarkdown) convertEquation(block *larkdocx.Block) (string, error)
 }
 
 func (c *BlockToMarkdown) convertTodo(block *larkdocx.Block) (string, error) {
+	return c.convertTodoWithDepth(block, 0, 0)
+}
+
+func (c *BlockToMarkdown) convertTodoWithDepth(block *larkdocx.Block, indent, depth int) (string, error) {
 	if block.Todo == nil {
 		return "", nil
 	}
@@ -721,7 +725,20 @@ func (c *BlockToMarkdown) convertTodo(block *larkdocx.Block) (string, error) {
 	}
 
 	text := c.convertTextElements(block.Todo.Elements)
-	return fmt.Sprintf("- %s %s\n", checkbox, text), nil
+	prefix := strings.Repeat("  ", indent)
+	result := fmt.Sprintf("%s- %s %s\n", prefix, checkbox, text)
+
+	// 递归处理嵌套子项
+	if block.Children != nil {
+		for _, childID := range block.Children {
+			childBlock := c.blockMap[childID]
+			if childBlock != nil {
+				childMd, _ := c.convertBlockWithDepth(childBlock, indent+1, depth+1)
+				result += childMd
+			}
+		}
+	}
+	return result, nil
 }
 
 func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
