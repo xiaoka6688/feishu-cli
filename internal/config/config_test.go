@@ -372,6 +372,60 @@ func TestInit_BaseURLFromEnv(t *testing.T) {
 	}
 }
 
+func TestInit_BaseURLTrimsTrailingSlash(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"单斜杠", "https://private.example.com/", "https://private.example.com"},
+		{"多斜杠", "https://private.example.com///", "https://private.example.com"},
+		{"无斜杠", "https://private.example.com", "https://private.example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetConfig()
+
+			// 通过环境变量设置带尾部斜杠的 BaseURL
+			os.Setenv("FEISHU_BASE_URL", tt.input)
+			defer os.Unsetenv("FEISHU_BASE_URL")
+
+			if err := Init(""); err != nil {
+				t.Fatalf("Init() 返回错误: %v", err)
+			}
+
+			c := Get()
+			if c.BaseURL != tt.expected {
+				t.Errorf("BaseURL = %q, 期望 %q", c.BaseURL, tt.expected)
+			}
+		})
+	}
+}
+
+func TestInit_BaseURLTrimsTrailingSlashFromFile(t *testing.T) {
+	resetConfig()
+
+	// 配置文件中 base_url 带尾部斜杠
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "config.yaml")
+	content := "app_id: \"\"\napp_secret: \"\"\nbase_url: \"https://private.example.com/\"\n"
+	if err := os.WriteFile(configFile, []byte(content), 0600); err != nil {
+		t.Fatalf("创建配置文件失败: %v", err)
+	}
+
+	os.Unsetenv("FEISHU_BASE_URL")
+
+	if err := Init(configFile); err != nil {
+		t.Fatalf("Init() 返回错误: %v", err)
+	}
+
+	c := Get()
+	if c.BaseURL != "https://private.example.com" {
+		t.Errorf("BaseURL = %q, 期望 %q", c.BaseURL, "https://private.example.com")
+	}
+}
+
 func TestInit_DebugFromEnv(t *testing.T) {
 	resetConfig()
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -86,6 +87,9 @@ func Init(cfgFile string) error {
 	if err := viper.Unmarshal(cfg); err != nil {
 		return fmt.Errorf("解析配置失败: %w", err)
 	}
+
+	// 统一去除 BaseURL 尾部斜杠，避免拼接 API 路径时产生双斜杠
+	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
 
 	return nil
 }
