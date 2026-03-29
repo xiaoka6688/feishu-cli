@@ -233,6 +233,103 @@ func TestConvert_BlockquoteNested(t *testing.T) {
 	}
 }
 
+// TestConvert_BlockquoteMultiParagraphWithSurrounding 测试引用块：段落间空行 + 引用块前后文本
+func TestConvert_BlockquoteMultiParagraphWithSurrounding(t *testing.T) {
+	markdown := "123\n> 12312323213\n>\n> 213213\n>\n>\n> 1\n321"
+
+	conv := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	result, err := conv.ConvertWithTableData()
+	if err != nil {
+		t.Fatalf("ConvertWithTableData() 返回错误: %v", err)
+	}
+
+	// 应该有 3 个顶层块: Text("123"), QuoteContainer, Text("321")
+	if len(result.BlockNodes) != 3 {
+		t.Fatalf("期望 3 个顶层块, 实际 %d 个", len(result.BlockNodes))
+	}
+
+	// 第一个块: Text "123"
+	first := result.BlockNodes[0]
+	if first.Block.BlockType == nil || *first.Block.BlockType != int(BlockTypeText) {
+		t.Errorf("第一个块类型 = %v, 期望 %d (Text)", first.Block.BlockType, int(BlockTypeText))
+	}
+
+	// 第二个块: QuoteContainer
+	quote := result.BlockNodes[1]
+	if quote.Block.BlockType == nil || *quote.Block.BlockType != int(BlockTypeQuoteContainer) {
+		t.Errorf("第二个块类型 = %v, 期望 %d (QuoteContainer)", quote.Block.BlockType, int(BlockTypeQuoteContainer))
+	}
+
+	// QuoteContainer 子块应该有段落间的空行分隔:
+	// "12312323213", empty, "213213", empty, "1"
+	if len(quote.Children) != 5 {
+		t.Fatalf("QuoteContainer 子块数 = %d, 期望 5 (含段落间空行)", len(quote.Children))
+	}
+
+	// 检查内容: [0]=12312323213, [1]=empty, [2]=213213, [3]=empty, [4]=1
+	getTextContent := func(node *BlockNode) string {
+		if node.Block.Text == nil || len(node.Block.Text.Elements) == 0 {
+			return ""
+		}
+		elem := node.Block.Text.Elements[0]
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			return *elem.TextRun.Content
+		}
+		return ""
+	}
+	expected := []string{"12312323213", "", "213213", "", "1"}
+	for i, exp := range expected {
+		got := getTextContent(quote.Children[i])
+		if got != exp {
+			t.Errorf("QuoteContainer 子块[%d] 内容 = %q, 期望 %q", i, got, exp)
+		}
+	}
+
+	// 第三个块: Text "321"
+	last := result.BlockNodes[2]
+	if last.Block.BlockType == nil || *last.Block.BlockType != int(BlockTypeText) {
+		t.Errorf("第三个块类型 = %v, 期望 %d (Text)", last.Block.BlockType, int(BlockTypeText))
+	}
+}
+
+// TestNormalizeBlockquoteEnding 测试引用块结束标准化
+func TestNormalizeBlockquoteEnding(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		expect string
+	}{
+		{
+			name:   "引用块后紧跟非引用行",
+			input:  "> line1\nnext",
+			expect: "> line1\n\nnext",
+		},
+		{
+			name:   "引用块后已有空行",
+			input:  "> line1\n\nnext",
+			expect: "> line1\n\nnext",
+		},
+		{
+			name:   "代码块内的 > 不处理",
+			input:  "```\n> not quote\nnext\n```",
+			expect: "```\n> not quote\nnext\n```",
+		},
+		{
+			name:   "引用块后是空行不插入",
+			input:  "> line1\n",
+			expect: "> line1\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := string(normalizeBlockquoteEnding([]byte(tt.input)))
+			if got != tt.expect {
+				t.Errorf("normalizeBlockquoteEnding(%q) = %q, 期望 %q", tt.input, got, tt.expect)
+			}
+		})
+	}
+}
+
 func TestConvert_ThematicBreak(t *testing.T) {
 	markdown := "段落一\n\n---\n\n段落二"
 

@@ -143,8 +143,63 @@ func FlattenBlockNodes(nodes []*BlockNode) []*larkdocx.Block {
 	return result
 }
 
+// normalizeBlockquoteEnding 确保引用块后有空行分隔
+// goldmark 的 lazy continuation 会将引用块后紧跟的非引用行视为引用块的一部分，
+// 通过在引用块最后一行和非引用行之间插入空行来终止引用块
+func normalizeBlockquoteEnding(source []byte) []byte {
+	lines := strings.Split(string(source), "\n")
+	var result []string
+	inFence := false
+	fenceLen := 0
+
+	for i, line := range lines {
+		result = append(result, line)
+		trimmed := strings.TrimSpace(line)
+
+		// 代码围栏检测（跳过围栏内的内容）
+		backticks := 0
+		for _, ch := range trimmed {
+			if ch == '`' {
+				backticks++
+			} else {
+				break
+			}
+		}
+		if !inFence && backticks >= 3 {
+			inFence = true
+			fenceLen = backticks
+			continue
+		}
+		if inFence && backticks >= fenceLen {
+			rest := strings.TrimLeft(trimmed, "`")
+			if strings.TrimSpace(rest) == "" {
+				inFence = false
+				fenceLen = 0
+			}
+			continue
+		}
+		if inFence {
+			continue
+		}
+
+		// 当前行是引用行，下一行非空且不是引用行 → 插入空行终止引用块
+		if i+1 < len(lines) {
+			nextTrimmed := strings.TrimSpace(lines[i+1])
+			if strings.HasPrefix(trimmed, ">") &&
+				nextTrimmed != "" &&
+				!strings.HasPrefix(nextTrimmed, ">") {
+				result = append(result, "")
+			}
+		}
+	}
+	return []byte(strings.Join(result, "\n"))
+}
+
 // ConvertWithTableData converts Markdown to Feishu blocks and returns table data for content filling
 func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
+	// 预处理：确保引用块后有空行分隔，避免 goldmark 的 lazy continuation
+	c.source = normalizeBlockquoteEnding(c.source)
+
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithParserOptions(
@@ -646,9 +701,25 @@ func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) ([]*BlockNode,
 	}
 
 	var children []*BlockNode
+	paragraphCount := 0 // 跟踪已处理的段落数，用于插入段落间空行
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch n := child.(type) {
 		case *ast.Paragraph:
+			// 段落间插入空 Text 块，对应引用块内的 > 空行
+			if paragraphCount > 0 {
+				emptyBlockType := int(BlockTypeText)
+				emptyContent := ""
+				children = append(children, &BlockNode{
+					Block: &larkdocx.Block{
+						BlockType: &emptyBlockType,
+						Text: &larkdocx.Text{Elements: []*larkdocx.TextElement{
+							{TextRun: &larkdocx.TextRun{Content: &emptyContent}},
+						}},
+					},
+				})
+			}
+			paragraphCount++
+
 			// 按行拆分段落内容
 			lines := c.extractQuoteLines(n)
 			textBlockType := int(BlockTypeText)
@@ -695,13 +766,16 @@ func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) ([]*BlockNode,
 		}
 	}
 
-	// 如果没有子块，创建一个空文本子块
+	// 如果没有子块，创建一个含空内容的文本子块
 	if len(children) == 0 {
 		textBlockType := int(BlockTypeText)
+		emptyContent := ""
 		children = append(children, &BlockNode{
 			Block: &larkdocx.Block{
 				BlockType: &textBlockType,
-				Text:      &larkdocx.Text{Elements: []*larkdocx.TextElement{}},
+				Text: &larkdocx.Text{Elements: []*larkdocx.TextElement{
+					{TextRun: &larkdocx.TextRun{Content: &emptyContent}},
+				}},
 			},
 		})
 	}

@@ -1293,16 +1293,22 @@ func (c *BlockToMarkdown) convertQuoteContainerWithDepth(block *larkdocx.Block, 
 
 	var sb strings.Builder
 
-	// Process child blocks（跳过空文本子块，与 convertCallout 保持一致）
+	// Process child blocks（保留空行，确保引用块内空行正确导出）
 	if block.Children != nil {
+		hasContent := false
 		for _, childID := range block.Children {
 			childBlock := c.blockMap[childID]
 			if childBlock != nil {
 				text, _ := c.convertBlockWithDepth(childBlock, 0, depth+1)
 				text = strings.TrimRight(text, "\n")
 				if text == "" {
+					// 跳过开头的空行；已有内容后保留空行
+					if hasContent {
+						sb.WriteString(">\n")
+					}
 					continue
 				}
+				hasContent = true
 				for _, line := range strings.Split(text, "\n") {
 					sb.WriteString("> " + line + "\n")
 				}
