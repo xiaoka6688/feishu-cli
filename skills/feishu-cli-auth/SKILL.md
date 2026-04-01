@@ -408,7 +408,7 @@ feishu-cli config add-scopes --domain doc,im --print-only
 | `doc` | 文档/知识库/云空间（docx:document, wiki:wiki:readonly, drive:drive 等） |
 | `im` | 消息/群聊（im:message, im:chat 等） |
 | `bitable` | 多维表格（bitable:app） |
-| `sheet` | 电子表格（sheets:spreadsheet） |
+| `sheet` | 电子表格（sheets:spreadsheet:create/read/write_only，注意：不存在 sheets:spreadsheet:readonly） |
 | `contact` | 通讯录（contact:user.base:readonly） |
 | `search` | 搜索（search:docs:read, search:message） |
 | `export` | 导出（drive:export:readonly, docs:document:export） |

@@ -39,7 +39,8 @@ var sheetReadCmd = &cobra.Command{
 			rangeStr = sheetID + "!" + rangeStr
 		}
 
-		cellRange, err := client.ReadCells(client.Context(), spreadsheetToken, rangeStr, valueRenderOption, dateTimeRenderOption)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		cellRange, err := client.ReadCells(client.Context(), spreadsheetToken, rangeStr, valueRenderOption, dateTimeRenderOption, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -75,4 +76,5 @@ func init() {
 	sheetReadCmd.Flags().String("value-render", "", "值渲染选项: ToString, FormattedValue, Formula, UnformattedValue")
 	sheetReadCmd.Flags().String("datetime-render", "", "日期时间渲染选项: FormattedString")
 	sheetReadCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
+	sheetReadCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的表格）")
 }

@@ -285,8 +285,8 @@ func UpdateSpreadsheetTitle(ctx context.Context, spreadsheetToken, title string)
 	return nil
 }
 
-// QuerySheets 查询所有工作表 (V3 API)
-func QuerySheets(ctx context.Context, spreadsheetToken string) ([]*SheetInfo, error) {
+// QuerySheets 查询所有工作表 (V3 API)，userAccessToken 为空时使用 Tenant Token
+func QuerySheets(ctx context.Context, spreadsheetToken string, userAccessToken ...string) ([]*SheetInfo, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -296,7 +296,13 @@ func QuerySheets(ctx context.Context, spreadsheetToken string) ([]*SheetInfo, er
 		SpreadsheetToken(spreadsheetToken).
 		Build()
 
-	resp, err := client.Sheets.SpreadsheetSheet.Query(ctx, req)
+	uat := ""
+	if len(userAccessToken) > 0 {
+		uat = userAccessToken[0]
+	}
+	opts := UserTokenOption(uat)
+
+	resp, err := client.Sheets.SpreadsheetSheet.Query(ctx, req, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("查询工作表失败: %w", err)
 	}
@@ -485,8 +491,15 @@ func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr
 
 // ==================== V2 API (通过 HTTP 请求) ====================
 
-// v2APICall 封装 V2 API 调用
+// v2APICall 封装 V2 API 调用（使用 Tenant Token）
 func v2APICall(client *lark.Client, ctx context.Context, method, path string, body any) ([]byte, error) {
+	return v2APICallWithToken(client, ctx, method, path, body, "")
+}
+
+// v2APICallWithToken 封装 V2 API 调用，支持 User Token（为空时回退到 Tenant Token）
+func v2APICallWithToken(client *lark.Client, ctx context.Context, method, path string, body any, userAccessToken string) ([]byte, error) {
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
 	var resp *larkcore.ApiResp
 	var err error
 
@@ -494,13 +507,13 @@ func v2APICall(client *lark.Client, ctx context.Context, method, path string, bo
 	// 不要在这里预先序列化，否则会导致双重序列化
 	switch method {
 	case "GET":
-		resp, err = client.Get(ctx, path, nil, larkcore.AccessTokenTypeTenant)
+		resp, err = client.Get(ctx, path, nil, tokenType, opts...)
 	case "POST":
-		resp, err = client.Post(ctx, path, body, larkcore.AccessTokenTypeTenant)
+		resp, err = client.Post(ctx, path, body, tokenType, opts...)
 	case "PUT":
-		resp, err = client.Put(ctx, path, body, larkcore.AccessTokenTypeTenant)
+		resp, err = client.Put(ctx, path, body, tokenType, opts...)
 	case "DELETE":
-		resp, err = client.Delete(ctx, path, body, larkcore.AccessTokenTypeTenant)
+		resp, err = client.Delete(ctx, path, body, tokenType, opts...)
 	default:
 		return nil, fmt.Errorf("不支持的 HTTP 方法: %s", method)
 	}
@@ -516,8 +529,8 @@ func v2APICall(client *lark.Client, ctx context.Context, method, path string, bo
 	return resp.RawBody, nil
 }
 
-// ReadCells 读取单元格数据 (V2 API)
-func ReadCells(ctx context.Context, spreadsheetToken, rangeStr string, valueRenderOption, dateTimeRenderOption string) (*CellRange, error) {
+// ReadCells 读取单元格数据 (V2 API)，userAccessToken 为空时使用 Tenant Token
+func ReadCells(ctx context.Context, spreadsheetToken, rangeStr string, valueRenderOption, dateTimeRenderOption string, userAccessToken ...string) (*CellRange, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -538,7 +551,11 @@ func ReadCells(ctx context.Context, spreadsheetToken, rangeStr string, valueRend
 		path += "?" + params.Encode()
 	}
 
-	respBody, err := v2APICall(client, ctx, "GET", path, nil)
+	uat := ""
+	if len(userAccessToken) > 0 {
+		uat = userAccessToken[0]
+	}
+	respBody, err := v2APICallWithToken(client, ctx, "GET", path, nil, uat)
 	if err != nil {
 		return nil, fmt.Errorf("读取单元格失败: %w", err)
 	}

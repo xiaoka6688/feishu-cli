@@ -79,7 +79,7 @@ var exportWikiCmd = &cobra.Command{
 			}
 			markdown = md
 		case "sheet":
-			md, err := exportSheetToMarkdown(node.ObjToken, node.Title)
+			md, err := exportSheetToMarkdown(node.ObjToken, node.Title, userAccessToken)
 			if err != nil {
 				return err
 			}
@@ -149,12 +149,12 @@ func exportDocxToMarkdown(docToken, userAccessToken string, cmd *cobra.Command) 
 }
 
 // exportSheetToMarkdown 导出 sheet 类型文档为 Markdown
-func exportSheetToMarkdown(spreadsheetToken, title string) (string, error) {
+func exportSheetToMarkdown(spreadsheetToken, title, userAccessToken string) (string, error) {
 	ctx := client.Context()
 
 	// 1. 查询所有工作表
 	fmt.Println("正在获取工作表列表...")
-	sheets, err := client.QuerySheets(ctx, spreadsheetToken)
+	sheets, err := client.QuerySheets(ctx, spreadsheetToken, userAccessToken)
 	if err != nil {
 		return "", fmt.Errorf("获取工作表列表失败: %w", err)
 	}
@@ -174,7 +174,7 @@ func exportSheetToMarkdown(spreadsheetToken, title string) (string, error) {
 		colLetter := colIndexToLetter(s.ColCount)
 		rangeStr := fmt.Sprintf("%s!A1:%s%d", s.SheetID, colLetter, s.RowCount)
 
-		cellRange, err := client.ReadCells(ctx, spreadsheetToken, rangeStr, "", "")
+		cellRange, err := client.ReadCells(ctx, spreadsheetToken, rangeStr, "", "", userAccessToken)
 		if err != nil {
 			fmt.Printf("  ⚠ 读取工作表 %q 失败: %v，跳过\n", s.Title, err)
 			continue
