@@ -437,7 +437,12 @@ func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*
 					if err != nil {
 						return nil, err
 					}
-					return &BlockNode{Block: block}, nil
+					// 收集嵌套子列表
+					children, err := c.collectNestedChildren(node)
+					if err != nil {
+						return nil, err
+					}
+					return &BlockNode{Block: block, Children: children}, nil
 				}
 			}
 		}
@@ -448,7 +453,12 @@ func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*
 					if err != nil {
 						return nil, err
 					}
-					return &BlockNode{Block: block}, nil
+					// 收集嵌套子列表
+					children, err := c.collectNestedChildren(node)
+					if err != nil {
+						return nil, err
+					}
+					return &BlockNode{Block: block, Children: children}, nil
 				}
 				// Also check for raw text pattern
 				if txt, ok := tb.FirstChild().(*ast.Text); ok {
@@ -458,7 +468,12 @@ func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*
 						if err != nil {
 							return nil, err
 						}
-						return &BlockNode{Block: block}, nil
+						// 收集嵌套子列表
+						children, err := c.collectNestedChildren(node)
+						if err != nil {
+							return nil, err
+						}
+						return &BlockNode{Block: block, Children: children}, nil
 					}
 				}
 			}
@@ -515,6 +530,21 @@ func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*
 	}
 
 	return &BlockNode{Block: block, Children: children}, nil
+}
+
+// collectNestedChildren 收集 ListItem 下嵌套的子列表，返回 BlockNode 切片
+func (c *MarkdownToBlock) collectNestedChildren(node *ast.ListItem) ([]*BlockNode, error) {
+	var children []*BlockNode
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		if nestedList, ok := child.(*ast.List); ok {
+			childNodes, err := c.convertList(nestedList)
+			if err != nil {
+				return nil, err
+			}
+			children = append(children, childNodes...)
+		}
+	}
+	return children, nil
 }
 
 // extractListItemDirectElements 提取 ListItem 直接子节点的文本元素，
@@ -584,6 +614,11 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 
 		// Skip TaskCheckBox nodes
 		if _, ok := n.(*east.TaskCheckBox); ok {
+			return ast.WalkSkipChildren, nil
+		}
+
+		// 跳过嵌套列表——它们作为 BlockNode.Children 单独处理
+		if _, ok := n.(*ast.List); ok {
 			return ast.WalkSkipChildren, nil
 		}
 
