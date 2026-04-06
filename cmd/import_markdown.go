@@ -624,11 +624,15 @@ func phase1CreateBlocks(
 
 					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
 
-					// Callout 块：飞书 API 创建 Callout 时会自动生成一个空文本子块（位于 index 0），
-					// 在实际子块创建完成后将其删除，否则 Callout 中会多出一个空行
+					// Callout / QuoteContainer 块：飞书 API 创建容器块时会自动生成一个空文本子块（位于 index 0），
+					// 在实际子块创建完成后将其删除，否则容器中会多出一个空行
 					if idx < len(result.BlockNodes) {
 						node := result.BlockNodes[idx]
-						if node.Block.BlockType != nil && *node.Block.BlockType == int(converter.BlockTypeCallout) {
+						if node.Block.BlockType != nil && (*node.Block.BlockType == int(converter.BlockTypeCallout) || *node.Block.BlockType == int(converter.BlockTypeQuoteContainer)) {
+							blockTypeName := "Callout"
+							if *node.Block.BlockType == int(converter.BlockTypeQuoteContainer) {
+								blockTypeName = "QuoteContainer"
+							}
 							// 防御性检查：先获取子块列表，确认 index 0 确实是空文本块再删除
 							shouldDelete := false
 							childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
@@ -654,7 +658,7 @@ func phase1CreateBlocks(
 									shouldDelete = isEmpty
 								}
 							} else if childrenResult.Err != nil && verbose {
-								syncPrintf("  ⚠ Callout 子块查询失败 (parent=%s): %v\n", parentID, childrenResult.Err)
+								syncPrintf("  ⚠ %s 子块查询失败 (parent=%s): %v\n", blockTypeName, parentID, childrenResult.Err)
 							}
 
 							if shouldDelete {
@@ -666,7 +670,7 @@ func phase1CreateBlocks(
 									RetryOnRateLimit: true,
 								})
 								if delResult.Err != nil {
-									fmt.Fprintf(os.Stderr, "  ⚠ Callout 空子块删除失败 (parent=%s): %v\n", parentID, delResult.Err)
+									fmt.Fprintf(os.Stderr, "  ⚠ %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
 								}
 							}
 						}
