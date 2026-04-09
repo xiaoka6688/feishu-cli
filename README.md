@@ -27,6 +27,8 @@ feishu-cli 是一个功能完整的飞书开放平台命令行工具。它将飞
 
 除了传统的 CLI 用法，feishu-cli 还为 [Claude Code](https://claude.ai/claude-code) 等 AI 编程助手提供了 **11 个开箱即用的技能文件**，让 AI Agent 能够直接创建文档、发送消息、管理权限 — 无需任何额外配置。
 
+> **注意**：feishu-cli 主要面向 AI Agent（如 Claude Code）使用，通过技能文件让 AI 直接操控飞书。虽然人类也可以直接使用命令行，但大多数场景下建议通过 AI Agent 调用，体验更佳。
+
 ### 为什么选择 feishu-cli
 
 - **双向转换零损耗** — 支持 40+ 种块类型，Markdown 导入飞书后再导出，内容完整保留
@@ -171,26 +173,47 @@ cd feishu-cli && make build
 
 ### 配置凭证
 
+**一键创建应用（推荐）**
+
+无需手动访问飞书开放平台后台，一条命令自动完成应用注册：
+
+```bash
+# 自动创建飞书应用并保存凭证到 ~/.feishu-cli/config.yaml
+feishu-cli config create-app --save
+```
+
+执行后终端会输出一个授权链接，用飞书扫码确认即可。CLI 自动获取 App ID 和 App Secret 并写入配置文件，后续命令直接可用。
+
+然后为应用开通权限：
+
+```bash
+# 一次性申请所有常用权限（在浏览器中点击「开通」即可）
+feishu-cli config add-scopes --domain all
+```
+
+<details>
+<summary>手动配置（不推荐）</summary>
+
+如果你有特殊需求（如企业应用、自定义应用类型），也可以手动配置：
+
 1. 在 [飞书开放平台](https://open.feishu.cn/app) 创建应用，获取 App ID 和 App Secret
 2. 给应用添加所需权限（参见[权限要求](#权限要求)）
 3. 配置凭证（二选一）：
 
 ```bash
-# 方式一：环境变量（推荐）
+# 方式一：环境变量
 export FEISHU_APP_ID="cli_xxx"
 export FEISHU_APP_SECRET="xxx"
 
-# 方式二：配置文件 ~/.feishu-cli/config.yaml
-feishu-cli config init
+# 方式二：配置文件
+feishu-cli config init  # 生成模板后手动编辑填入凭证
 ```
 
-4. （可选）如果需要使用搜索、审批任务查询等需要用户身份的功能，还需完成 OAuth 用户授权：
+</details>
+
+（可选）如果需要使用搜索、审批任务查询等需要用户身份的功能，还需完成 OAuth 用户授权：
 
 ```bash
-# 前置条件：在飞书开放平台 → 应用详情 → 安全设置 → 重定向 URL 中添加：
-# http://127.0.0.1:9768/callback
-
-# 一键 OAuth 登录
 feishu-cli auth login
 ```
 
