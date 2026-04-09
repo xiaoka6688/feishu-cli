@@ -253,7 +253,7 @@ func isLocalPath(s string) bool {
 	// 检查是否是文件路径（包含 / 或 \ 或扩展名）
 	ext := strings.ToLower(filepath.Ext(s))
 	if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" ||
-		ext == ".bmp" || ext == ".webp" || ext == ".svg" {
+		ext == ".bmp" || ext == ".webp" {
 		return true
 	}
 	// 检查路径分隔符
@@ -263,64 +263,63 @@ func isLocalPath(s string) bool {
 	return false
 }
 
+// resolveLocalPath 解析相对路径为绝对路径（与 markdown import 保持一致）
+func resolveLocalPath(path, basePath string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(basePath, path)
+}
+
+// uploadLocalImageForIM 解析路径、检查存在性并上传图片到 IM API
+// 返回 image_key；文件不存在或上传失败时返回空字符串（打印警告）
+func uploadLocalImageForIM(imagePath, basePath string) string {
+	resolvedPath := resolveLocalPath(imagePath, basePath)
+
+	if _, err := os.Stat(resolvedPath); err != nil {
+		fmt.Fprintf(os.Stderr, "警告: 跳过不存在的图片: %s\n", resolvedPath)
+		return ""
+	}
+
+	fmt.Fprintf(os.Stderr, "正在上传图片: %s\n", resolvedPath)
+	imageKey, err := client.UploadIMImage(resolvedPath, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "警告: 上传图片 %s 失败: %v\n", resolvedPath, err)
+		return ""
+	}
+	return imageKey
+}
+
 // processAndUploadLocalImages 解析消息内容中的本地图片路径，上传并替换为 image_key
 // basePath 用于解析相对路径：如果使用 --content-file，以其目录为 basePath；否则用当前目录
 // 返回处理后的内容和上传的图片数量
 func processAndUploadLocalImages(content string, basePath string) (string, int, error) {
-	// 先收集所有本地图片路径
-	type imageReplace struct {
-		oldStr string
-		newStr string
-	}
-	var replacements []imageReplace
 	uploadCount := 0
 
-	// 解析相对路径为绝对路径（与 markdown import 保持一致）
-	resolveLocalPath := func(path string) string {
-		if filepath.IsAbs(path) {
-			return path
-		}
-		return filepath.Join(basePath, path)
-	}
-
-	// 1. 处理 Markdown 语法中的本地图片: ![alt](local/path.png)
+	// 1. 先处理 Markdown 语法中的本地图片: ![alt](local/path.png)
+	// 在 JSON 处理之前立即替换，避免 JSON 重新序列化导致字符串不匹配
 	matches := markdownImageRegex.FindAllStringSubmatch(content, -1)
 	for _, match := range matches {
-		fullMatch := match[0]    // 完整匹配如 ![alt](local/path.png)
-		imagePath := match[2]     // 图片路径
+		fullMatch := match[0] // 完整匹配如 ![alt](local/path.png)
+		imagePath := match[2] // 图片路径
 
 		if !isLocalPath(imagePath) {
 			continue
 		}
 
-		// 解析相对路径
-		resolvedPath := resolveLocalPath(imagePath)
-
-		// 检查文件是否存在
-		if _, err := os.Stat(resolvedPath); err != nil {
-			fmt.Fprintf(os.Stderr, "警告: 跳过不存在的图片: %s\n", resolvedPath)
+		imageKey := uploadLocalImageForIM(imagePath, basePath)
+		if imageKey == "" {
 			continue
 		}
 
-		// 上传图片
-		fmt.Fprintf(os.Stderr, "正在上传图片: %s\n", resolvedPath)
-		imageKey, err := client.UploadIMImage(resolvedPath, "")
-		if err != nil {
-			return "", 0, fmt.Errorf("上传图片 %s 失败: %w", resolvedPath, err)
-		}
-
-		// 替换为飞书图片格式
-		replacements = append(replacements, imageReplace{
-			oldStr: fullMatch,
-			newStr: fmt.Sprintf("![%s](%s)", match[1], imageKey),
-		})
+		// 立即替换，避免后续 JSON 序列化改变内容导致 ReplaceAll 失效
+		content = strings.ReplaceAll(content, fullMatch, fmt.Sprintf("![%s](%s)", match[1], imageKey))
 		uploadCount++
 	}
 
 	// 2. 尝试解析为 JSON，处理 img 标签中的本地 image_key
 	var jsonData interface{}
 	if err := json.Unmarshal([]byte(content), &jsonData); err == nil {
-		// 是有效的 JSON，递归处理
 		changed, newData, count := processJSONLocalImages(jsonData, basePath)
 		if changed {
 			uploadCount += count
@@ -332,11 +331,6 @@ func processAndUploadLocalImages(content string, basePath string) (string, int, 
 		}
 	}
 
-	// 3. 应用 Markdown 替换
-	for _, rep := range replacements {
-		content = strings.ReplaceAll(content, rep.oldStr, rep.newStr)
-	}
-
 	return content, uploadCount, nil
 }
 
@@ -344,68 +338,42 @@ func processAndUploadLocalImages(content string, basePath string) (string, int, 
 // basePath 用于解析相对路径
 // 返回是否有修改、处理后的数据、上传的图片数量
 func processJSONLocalImages(data interface{}, basePath string) (bool, interface{}, int) {
-	// 解析相对路径为绝对路径
-	resolveLocalPath := func(path string) string {
-		if filepath.IsAbs(path) {
-			return path
-		}
-		return filepath.Join(basePath, path)
-	}
-
 	switch v := data.(type) {
 	case map[string]interface{}:
-		changed := false
-		count := 0
-		newMap := make(map[string]interface{})
-
 		// 检查是否是 img 标签
 		if tag, ok := v["tag"].(string); ok && tag == "img" {
-			if imageKey, ok := v["image_key"].(string); ok && isLocalPath(imageKey) {
-				// 解析相对路径
-				resolvedPath := resolveLocalPath(imageKey)
-
-				// 检查文件是否存在
-				if _, err := os.Stat(resolvedPath); err != nil {
-					fmt.Fprintf(os.Stderr, "警告: 跳过不存在的图片: %s\n", resolvedPath)
-					newMap = v
-				} else {
-					// 上传图片
-					fmt.Fprintf(os.Stderr, "正在上传图片: %s\n", resolvedPath)
-					imageKeyResult, err := client.UploadIMImage(resolvedPath, "")
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "警告: 上传图片 %s 失败: %v\n", resolvedPath, err)
-						newMap = v
-					} else {
-						newMap = map[string]interface{}{
-							"tag":       "img",
-							"image_key": imageKeyResult,
-						}
-						// 保留 width 和 height 如果存在
-						if w, ok := v["width"].(float64); ok {
-							newMap["width"] = w
-						}
-						if h, ok := v["height"].(float64); ok {
-							newMap["height"] = h
-						}
-						changed = true
-						count = 1
-					}
+			if imageKeyVal, ok := v["image_key"].(string); ok && isLocalPath(imageKeyVal) {
+				imageKey := uploadLocalImageForIM(imageKeyVal, basePath)
+				if imageKey == "" {
+					return false, v, 0
 				}
-			} else {
-				newMap = v
-			}
-		} else {
-			// 递归处理所有字段
-			for key, val := range v {
-				c, newVal, n := processJSONLocalImages(val, basePath)
-				if c {
-					changed = true
-					count += n
+				// 保留所有原始属性，仅替换 image_key
+				newMap := make(map[string]interface{}, len(v))
+				for key, val := range v {
+					newMap[key] = val
 				}
-				newMap[key] = newVal
+				newMap["image_key"] = imageKey
+				return true, newMap, 1
 			}
+			return false, v, 0
 		}
-		return changed, newMap, count
+
+		// 递归处理所有字段
+		changed := false
+		count := 0
+		newMap := make(map[string]interface{}, len(v))
+		for key, val := range v {
+			c, newVal, n := processJSONLocalImages(val, basePath)
+			if c {
+				changed = true
+				count += n
+			}
+			newMap[key] = newVal
+		}
+		if !changed {
+			return false, v, 0
+		}
+		return true, newMap, count
 
 	case []interface{}:
 		changed := false
@@ -419,7 +387,10 @@ func processJSONLocalImages(data interface{}, basePath string) (bool, interface{
 			}
 			newArr[i] = newItem
 		}
-		return changed, newArr, count
+		if !changed {
+			return false, v, 0
+		}
+		return true, newArr, count
 
 	default:
 		return false, v, 0

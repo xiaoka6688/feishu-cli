@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -33,7 +33,7 @@ func TestIsLocalPath(t *testing.T) {
 		{"相对路径 gif", "animation.gif", true},
 		{"相对路径 bmp", "icon.bmp", true},
 		{"相对路径 webp", "image.webp", true},
-		{"相对路径 svg", "vector.svg", true},
+		{"相对路径 svg（IM 不支持）", "vector.svg", false},
 
 		// 绝对路径应该是本地路径
 		{"绝对路径 Unix", "/Users/test/image.png", true},
@@ -130,7 +130,7 @@ func TestProcessJSONLocalImages_SkipRemoteImages(t *testing.T) {
 			if err != nil {
 				t.Fatalf("JSON 序列化失败: %v", err)
 			}
-			if !contains(string(resultBytes), tt.expectKey) {
+			if !strings.Contains(string(resultBytes), tt.expectKey) {
 				t.Errorf("结果 JSON 不包含期望的 image_key %q，结果: %s", tt.expectKey, string(resultBytes))
 			}
 		})
@@ -161,7 +161,7 @@ func TestProcessJSONLocalImages_SkipNonExistentFiles(t *testing.T) {
 
 	// 验证结果保留原值
 	resultBytes, _ := json.Marshal(newData)
-	if !contains(string(resultBytes), "/nonexistent/path/to/image.png") {
+	if !strings.Contains(string(resultBytes), "/nonexistent/path/to/image.png") {
 		t.Errorf("结果应该保留原路径，结果: %s", string(resultBytes))
 	}
 }
@@ -188,7 +188,7 @@ func TestProcessJSONLocalImages_NonImageTag(t *testing.T) {
 	}
 
 	resultBytes, _ := json.Marshal(newData)
-	if !contains(string(resultBytes), "some.png") {
+	if !strings.Contains(string(resultBytes), "some.png") {
 		t.Errorf("结果应该保留原值，结果: %s", string(resultBytes))
 	}
 }
@@ -306,7 +306,7 @@ func TestProcessAndUploadLocalImages_SkipRemoteMarkdownImages(t *testing.T) {
 			if count != 0 {
 				t.Errorf("不应该有任何上传，count=%d", count)
 			}
-			if !contains(result, tt.expectContains) {
+			if !strings.Contains(result, tt.expectContains) {
 				t.Errorf("结果不包含期望字符串 %q，结果: %s", tt.expectContains, result)
 			}
 		})
@@ -340,7 +340,7 @@ func TestProcessAndUploadLocalImages_MixedContent(t *testing.T) {
 		t.Errorf("不存在的本地文件不应该被上传，count=%d", count)
 	}
 	// 远程图片应该保留
-	if !contains(result, "https://example.com/remote.png") {
+	if !strings.Contains(result, "https://example.com/remote.png") {
 		t.Errorf("远程图片 URL 应该保留，结果: %s", result)
 	}
 }
@@ -384,60 +384,29 @@ func TestMarkdownImageRegex(t *testing.T) {
 }
 
 // -------------------------------------------------------------------
-// 辅助函数
+// resolveLocalPath 路径解析测试
 // -------------------------------------------------------------------
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
-}
-
-func containsHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
-// -------------------------------------------------------------------
-// 路径解析集成测试（创建真实临时文件）
-// -------------------------------------------------------------------
-
-func TestResolveLocalPath_Integration(t *testing.T) {
-	// 这个测试验证相对路径解析逻辑是否正确
-	tmpDir := t.TempDir()
-
-	// 创建测试图片文件
-	imgPath := filepath.Join(tmpDir, "test.png")
-	if err := os.WriteFile(imgPath, []byte("fake"), 0600); err != nil {
-		t.Fatalf("创建测试文件失败: %v", err)
+func TestResolveLocalPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		basePath string
+		expected string
+	}{
+		{"相对路径", "test.png", "/tmp/dir", filepath.Join("/tmp/dir", "test.png")},
+		{"绝对路径不变", "/abs/path/img.png", "/tmp/dir", "/abs/path/img.png"},
+		{"子目录相对路径", "images/logo.png", "/tmp/dir", filepath.Join("/tmp/dir", "images/logo.png")},
+		{"上级目录", "../assets/icon.png", "/tmp/dir", filepath.Join("/tmp/dir", "../assets/icon.png")},
+		{"当前目录", "./screenshot.png", "/tmp/dir", filepath.Join("/tmp/dir", "./screenshot.png")},
 	}
 
-	// 验证文件存在
-	if _, err := os.Stat(imgPath); err != nil {
-		t.Fatalf("文件应该存在: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := resolveLocalPath(tt.path, tt.basePath)
+			if result != tt.expected {
+				t.Errorf("resolveLocalPath(%q, %q) = %q, 期望 %q", tt.path, tt.basePath, result, tt.expected)
+			}
+		})
 	}
-
-	// 测试 JSON 中引用该文件（使用相对于 tmpDir 的路径）
-	relPath := "test.png"
-	jsonContent := `{
-		"tag": "img",
-		"image_key": "` + relPath + `"
-	}`
-
-	var data interface{}
-	if err := json.Unmarshal([]byte(jsonContent), &data); err != nil {
-		t.Fatalf("JSON 解析失败: %v", err)
-	}
-
-	// 使用 tmpDir 作为 basePath，relPath 应该被解析为 tmpDir/test.png
-	changed, newData, count := processJSONLocalImages(data, tmpDir)
-
-	// 注意：这个测试会因为实际上传而失败（没有 API 凭据）
-	// 但我们可以验证路径解析的逻辑
-	// 如果 API 调用成功，changed 应该为 true
-	_ = changed
-	_ = newData
-	_ = count
 }
