@@ -45,8 +45,16 @@ func CreateDocument(title string, folderToken string) (*larkdocx.Document, error
 	return resp.Data.Document, nil
 }
 
-// GetDocument retrieves document information
+// GetDocument 获取文档信息（仅使用 App/Tenant Token）。
+// 保留作为 GetDocumentWithToken 的向后兼容 wrapper。
 func GetDocument(documentID string) (*larkdocx.Document, error) {
+	return GetDocumentWithToken(documentID, "")
+}
+
+// GetDocumentWithToken 获取文档信息，可选使用 User Access Token。
+// 当 userAccessToken 非空时以用户身份访问（可读取用户有权限但 App 无权限的文档）；
+// 为空时回退到 App/Tenant Token。
+func GetDocumentWithToken(documentID string, userAccessToken string) (*larkdocx.Document, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -56,7 +64,7 @@ func GetDocument(documentID string) (*larkdocx.Document, error) {
 		DocumentId(documentID).
 		Build()
 
-	resp, err := client.Docx.Document.Get(Context(), req)
+	resp, err := client.Docx.Document.Get(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("获取文档失败: %w", err)
 	}

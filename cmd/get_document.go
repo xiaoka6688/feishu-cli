@@ -13,9 +13,13 @@ var getDocumentCmd = &cobra.Command{
 	Short: "获取文档信息",
 	Long: `获取飞书文档的基本信息，包括文档ID、标题、版本号等。
 
+优先使用 User Access Token（自动从 ~/.feishu-cli/token.json 读取），
+回退到 App/Tenant Token，与 doc export 的鉴权路径一致。
+
 示例:
   feishu-cli doc get ABC123def456
-  feishu-cli doc get ABC123def456 -o json`,
+  feishu-cli doc get ABC123def456 -o json
+  feishu-cli doc get ABC123def456 --user-access-token u-xxxx`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -23,7 +27,8 @@ var getDocumentCmd = &cobra.Command{
 		}
 
 		docID := args[0]
-		doc, err := client.GetDocument(docID)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
+		doc, err := client.GetDocumentWithToken(docID, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -61,4 +66,5 @@ var getDocumentCmd = &cobra.Command{
 func init() {
 	docCmd.AddCommand(getDocumentCmd)
 	getDocumentCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
+	getDocumentCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问无 App 权限的文档，自动从 auth login 读取）")
 }

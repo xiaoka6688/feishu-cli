@@ -85,7 +85,7 @@ var exportMarkdownCmd = &cobra.Command{
 		// 添加 Front Matter
 		if frontMatter {
 			docTitle := ""
-			doc, docErr := client.GetDocument(documentID)
+			doc, docErr := client.GetDocumentWithToken(documentID, userAccessToken)
 			if docErr == nil && doc != nil && doc.Title != nil {
 				docTitle = *doc.Title
 			}
