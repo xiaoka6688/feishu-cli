@@ -621,10 +621,10 @@ func phase1CreateBlocks(
 				if idx < len(createdBlockIDs) {
 					parentID := createdBlockIDs[idx]
 
-					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
-
 					// Callout / QuoteContainer 块：飞书 API 创建容器块时会自动生成一个空文本子块（位于 index 0），
-					// 在实际子块创建完成后将其删除，否则容器中会多出一个空行
+					// 必须在添加实际子块之前将其删除——此时容器内只有该自动生成块，不会误删我们的内容。
+					// （若在 createNestedChildren 之后再删，容器内已有实际子块，index 0 可能被误判或 GetBlockChildren
+					// 因 API 一致性延迟返回不完整结果，导致自动生成块未能删除，引用块顶部出现多余空行。）
 					if idx < len(result.BlockNodes) {
 						node := result.BlockNodes[idx]
 						if node.Block.BlockType != nil && (*node.Block.BlockType == int(converter.BlockTypeCallout) || *node.Block.BlockType == int(converter.BlockTypeQuoteContainer)) {
@@ -632,8 +632,7 @@ func phase1CreateBlocks(
 							if *node.Block.BlockType == int(converter.BlockTypeQuoteContainer) {
 								blockTypeName = "QuoteContainer"
 							}
-							// 防御性检查：先获取子块列表，确认 index 0 确实是空文本块再删除
-							shouldDelete := false
+							// 在添加实际子块之前查询：此时容器里唯一可能存在的就是 API 自动生成的空文本子块
 							childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
 								return client.GetBlockChildren(documentID, parentID)
 							}, client.RetryConfig{
@@ -653,26 +652,26 @@ func phase1CreateBlocks(
 											}
 										}
 									}
-									shouldDelete = isEmpty
+									if isEmpty {
+										delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
+											headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
+											return struct{}{}, headers, err
+										}, client.RetryConfig{
+											MaxRetries:       5,
+											RetryOnRateLimit: true,
+										})
+										if delResult.Err != nil {
+											fmt.Fprintf(os.Stderr, "  ⚠ %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
+										}
+									}
 								}
 							} else if childrenResult.Err != nil && verbose {
 								syncPrintf("  ⚠ %s 子块查询失败 (parent=%s): %v\n", blockTypeName, parentID, childrenResult.Err)
 							}
-
-							if shouldDelete {
-								delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
-									headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
-									return struct{}{}, headers, err
-								}, client.RetryConfig{
-									MaxRetries:       5,
-									RetryOnRateLimit: true,
-								})
-								if delResult.Err != nil {
-									fmt.Fprintf(os.Stderr, "  ⚠ %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
-								}
-							}
 						}
 					}
+
+					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
 					if nestedErr != nil {
 						if verbose {
 							syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
