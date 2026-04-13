@@ -79,6 +79,205 @@ func TestConvert_Paragraph(t *testing.T) {
 	}
 }
 
+func TestConvert_ConsecutiveLinesBecomeSeparateBlocks(t *testing.T) {
+	// 回归测试：连续行（无空行分隔）应生成独立 Text 块，而非合并为一段
+	// 典型场景：**A派**：xxx\n**B派**：yyy 导入飞书后应为两行
+	tests := []struct {
+		name          string
+		markdown      string
+		expectedCount int
+	}{
+		{
+			name:          "两行粗体各自独立",
+			markdown:      "**A派**：xxx\n**B派**：yyy",
+			expectedCount: 2,
+		},
+		{
+			name:          "三行普通文本各自独立",
+			markdown:      "第一行\n第二行\n第三行",
+			expectedCount: 3,
+		},
+		{
+			name:          "单行段落不拆分",
+			markdown:      "只有一行文本",
+			expectedCount: 1,
+		},
+		{
+			name:          "空行分隔的两段保持两个块",
+			markdown:      "第一段\n\n第二段",
+			expectedCount: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			converter := NewMarkdownToBlock([]byte(tt.markdown), ConvertOptions{}, "")
+			blocks, err := converter.Convert()
+
+			if err != nil {
+				t.Fatalf("Convert() 返回错误: %v", err)
+			}
+
+			if len(blocks) != tt.expectedCount {
+				t.Errorf("期望 %d 个 block，实际 %d 个", tt.expectedCount, len(blocks))
+			}
+
+			for i, block := range blocks {
+				if block.BlockType == nil || *block.BlockType != int(BlockTypeText) {
+					t.Errorf("block[%d].BlockType = %v, 期望 %d (Text)", i, block.BlockType, int(BlockTypeText))
+				}
+			}
+		})
+	}
+}
+
+func TestConvert_ConsecutiveBoldLinesPreserveContent(t *testing.T) {
+	// 验证 **A派**：xxx\n**B派**：yyy 分行后每块内容和粗体样式均正确保留
+	markdown := "**A派**：xxx\n**B派**：yyy"
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	blocks, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("期望 2 个 block，实际 %d 个", len(blocks))
+	}
+
+	type wantElem struct {
+		text string
+		bold bool
+	}
+	wantBlocks := [][]wantElem{
+		{{"A派", true}, {"：xxx", false}},
+		{{"B派", true}, {"：yyy", false}},
+	}
+
+	for bi, want := range wantBlocks {
+		block := blocks[bi]
+		if block.Text == nil {
+			t.Fatalf("block[%d].Text 为 nil", bi)
+		}
+		elems := block.Text.Elements
+		if len(elems) != len(want) {
+			t.Errorf("block[%d] 期望 %d 个 TextElement，实际 %d 个", bi, len(want), len(elems))
+			continue
+		}
+		for ei, w := range want {
+			elem := elems[ei]
+			if elem.TextRun == nil {
+				t.Errorf("block[%d].elem[%d].TextRun 为 nil", bi, ei)
+				continue
+			}
+			if elem.TextRun.Content == nil || *elem.TextRun.Content != w.text {
+				t.Errorf("block[%d].elem[%d].Content = %v，期望 %q", bi, ei, elem.TextRun.Content, w.text)
+			}
+			hasBold := elem.TextRun.TextElementStyle != nil &&
+				elem.TextRun.TextElementStyle.Bold != nil &&
+				*elem.TextRun.TextElementStyle.Bold
+			if hasBold != w.bold {
+				t.Errorf("block[%d].elem[%d] bold=%v，期望 %v（text=%q）", bi, ei, hasBold, w.bold, w.text)
+			}
+		}
+	}
+}
+
+func TestConvert_ConsecutiveLinesPreserveInlineUnderline(t *testing.T) {
+	// 验证段落拆分时 <u>...</u> 包裹的内容不丢失，且下划线样式保留
+	markdown := "line1 <u>under</u>\nline2"
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	blocks, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("期望 2 个 block，实际 %d 个", len(blocks))
+	}
+
+	// 第一行应包含 "under" 并带下划线
+	firstBlock := blocks[0]
+	if firstBlock.Text == nil {
+		t.Fatal("blocks[0].Text 为 nil")
+	}
+	foundUnderline := false
+	combined := strings.Builder{}
+	for _, elem := range firstBlock.Text.Elements {
+		if elem.TextRun == nil || elem.TextRun.Content == nil {
+			continue
+		}
+		combined.WriteString(*elem.TextRun.Content)
+		if *elem.TextRun.Content == "under" &&
+			elem.TextRun.TextElementStyle != nil &&
+			elem.TextRun.TextElementStyle.Underline != nil &&
+			*elem.TextRun.TextElementStyle.Underline {
+			foundUnderline = true
+		}
+	}
+	if !strings.Contains(combined.String(), "under") {
+		t.Errorf("blocks[0] 应包含 'under'，实际内容 %q", combined.String())
+	}
+	if !foundUnderline {
+		t.Errorf("blocks[0] 中 'under' 应带下划线样式")
+	}
+
+	// 第二行应为 "line2"
+	secondBlock := blocks[1]
+	if secondBlock.Text == nil {
+		t.Fatal("blocks[1].Text 为 nil")
+	}
+	line2 := strings.Builder{}
+	for _, elem := range secondBlock.Text.Elements {
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			line2.WriteString(*elem.TextRun.Content)
+		}
+	}
+	if !strings.Contains(line2.String(), "line2") {
+		t.Errorf("blocks[1] 应包含 'line2'，实际内容 %q", line2.String())
+	}
+}
+
+func TestConvert_ConsecutiveLinesPreserveInlineMark(t *testing.T) {
+	// 验证段落拆分时 <mark>...</mark> 包裹的内容不丢失
+	markdown := "line1 <mark>hl</mark>\nline2"
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	blocks, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("期望 2 个 block，实际 %d 个", len(blocks))
+	}
+
+	// 第一行应包含 "hl"（高亮内容不能丢失）
+	firstBlock := blocks[0]
+	if firstBlock.Text == nil {
+		t.Fatal("blocks[0].Text 为 nil")
+	}
+	combined := strings.Builder{}
+	for _, elem := range firstBlock.Text.Elements {
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			combined.WriteString(*elem.TextRun.Content)
+		}
+	}
+	if !strings.Contains(combined.String(), "hl") {
+		t.Errorf("blocks[0] 应包含 'hl'（<mark> 内容不应丢失），实际内容 %q", combined.String())
+	}
+
+	// 第二行应为 "line2"
+	secondBlock := blocks[1]
+	if secondBlock.Text == nil {
+		t.Fatal("blocks[1].Text 为 nil")
+	}
+	line2 := strings.Builder{}
+	for _, elem := range secondBlock.Text.Elements {
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			line2.WriteString(*elem.TextRun.Content)
+		}
+	}
+	if !strings.Contains(line2.String(), "line2") {
+		t.Errorf("blocks[1] 应包含 'line2'，实际内容 %q", line2.String())
+	}
+}
+
 func TestConvert_CodeBlock(t *testing.T) {
 	markdown := "```go\nfmt.Println(\"Hello\")\n```"
 
