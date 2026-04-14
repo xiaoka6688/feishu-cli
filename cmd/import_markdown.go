@@ -619,63 +619,30 @@ func phase1CreateBlocks(
 			// 递归创建嵌套子块（如嵌套列表）
 			for idx, children := range nodeChildrenMap {
 				if idx < len(createdBlockIDs) {
-					parentID := createdBlockIDs[idx]
-
-					// Callout / QuoteContainer 容器创建时飞书 API 会自动插入一个 index 0 的空文本子块。
-					// 必须在调用 createNestedChildren 之前删除它，否则 GetBlockChildren 可能因 API
-					// 一致性延迟返回不完整结果，导致自动子块残留、容器顶部出现多余空行。
-					if idx < len(result.BlockNodes) {
-						node := result.BlockNodes[idx]
-						if node.Block.BlockType != nil && (*node.Block.BlockType == int(converter.BlockTypeCallout) || *node.Block.BlockType == int(converter.BlockTypeQuoteContainer)) {
-							blockTypeName := "Callout"
-							if *node.Block.BlockType == int(converter.BlockTypeQuoteContainer) {
-								blockTypeName = "QuoteContainer"
-							}
-							childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-								return client.GetBlockChildren(documentID, parentID)
-							}, client.RetryConfig{
-								MaxRetries:       3,
-								RetryOnRateLimit: true,
-							})
-							if childrenResult.Err == nil && len(childrenResult.Value) > 0 {
-								firstChild := childrenResult.Value[0]
-								if firstChild.BlockType != nil && *firstChild.BlockType == int(converter.BlockTypeText) {
-									// 检查是否为空文本块（无 elements 或所有 TextRun 内容为空）
-									isEmpty := true
-									if firstChild.Text != nil && len(firstChild.Text.Elements) > 0 {
-										for _, elem := range firstChild.Text.Elements {
-											if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
-												isEmpty = false
-												break
-											}
-										}
-									}
-									if isEmpty {
-										delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
-											headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
-											return struct{}{}, headers, err
-										}, client.RetryConfig{
-											MaxRetries:       5,
-											RetryOnRateLimit: true,
-										})
-										if delResult.Err != nil {
-											fmt.Fprintf(os.Stderr, "  ⚠ %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
-										}
-									}
-								}
-							} else if childrenResult.Err != nil && verbose {
-								syncPrintf("  ⚠ %s 子块查询失败 (parent=%s): %v\n", blockTypeName, parentID, childrenResult.Err)
-							}
-						}
-					}
-
-					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
+					nestedCount, nestedErr := createNestedChildren(documentID, createdBlockIDs[idx], children)
 					if nestedErr != nil {
 						if verbose {
 							syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
 						}
 					}
 					stats.totalBlocks += nestedCount
+				}
+			}
+
+			// QuoteContainer / Callout：遍历所有顶层节点清理飞书 API 异步生成的空子块。
+			// 在所有 createNestedChildren 完成后执行，覆盖有子块和无子块的容器节点。
+			for i, node := range result.BlockNodes {
+				if i >= len(createdBlockIDs) {
+					break
+				}
+				if node.Block.BlockType == nil {
+					continue
+				}
+				switch *node.Block.BlockType {
+				case int(converter.BlockTypeQuoteContainer):
+					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "QuoteContainer")
+				case int(converter.BlockTypeCallout):
+					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "Callout")
 				}
 			}
 
@@ -1152,11 +1119,24 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 
 	// 递归创建更深层的子块
 	for i, child := range children {
-		if len(child.Children) > 0 && i < len(createdBlockIDs) {
-			nestedCount, err := createNestedChildren(documentID, createdBlockIDs[i], child.Children)
+		if i >= len(createdBlockIDs) {
+			continue
+		}
+		childID := createdBlockIDs[i]
+		if len(child.Children) > 0 {
+			nestedCount, err := createNestedChildren(documentID, childID, child.Children)
 			totalCreated += nestedCount
 			if err != nil {
 				return totalCreated, err
+			}
+		}
+		// QuoteContainer / Callout 嵌套场景：无论是否有子块，均清理 API 自动生成的空块
+		if child.Block.BlockType != nil {
+			switch *child.Block.BlockType {
+			case int(converter.BlockTypeQuoteContainer):
+				deleteContainerAutoEmptyBlock(documentID, childID, "QuoteContainer")
+			case int(converter.BlockTypeCallout):
+				deleteContainerAutoEmptyBlock(documentID, childID, "Callout")
 			}
 		}
 	}

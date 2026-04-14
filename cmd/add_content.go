@@ -133,6 +133,50 @@ var addContentCmd = &cobra.Command{
 	},
 }
 
+// deleteContainerAutoEmptyBlock 删除 QuoteContainer/Callout 容器块中飞书 API 自动生成的空文本子块。
+// 飞书 API 在创建容器块时会异步在 index 0 插入一个空 Text 块，导致渲染时顶部出现多余空行。
+// 必须在 createNestedChildren 完成后调用，此时 API 已稳定：实际子块内容均非空，
+// 若 index 0 仍为空 Text 块则可安全判定为自动生成块并删除。
+func deleteContainerAutoEmptyBlock(documentID, parentID, blockTypeName string) {
+	childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+		return client.GetBlockChildren(documentID, parentID)
+	}, client.RetryConfig{
+		MaxRetries:       3,
+		RetryOnRateLimit: true,
+	})
+	if childrenResult.Err != nil || len(childrenResult.Value) == 0 {
+		return
+	}
+	firstChild := childrenResult.Value[0]
+	if firstChild.BlockType == nil || *firstChild.BlockType != int(converter.BlockTypeText) {
+		return
+	}
+	// 检查是否为空文本块：任何非空 TextRun 或非 TextRun 类型的元素（Link/MentionUser 等）
+	// 均视为有内容，不删除；只有 Elements 为空或全是 content="" 的 TextRun 才是自动生成的空块
+	if firstChild.Text != nil {
+		for _, elem := range firstChild.Text.Elements {
+			if elem.MentionUser != nil || elem.MentionDoc != nil || elem.File != nil ||
+				elem.Reminder != nil || elem.InlineBlock != nil || elem.Equation != nil ||
+				elem.Undefined != nil {
+				return // 有非 TextRun 元素（@用户/@文档/附件/提醒/内联块/公式/未知类型），不删
+			}
+			if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
+				return // 有非空文本，不删
+			}
+		}
+	}
+	delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
+		headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
+		return struct{}{}, headers, err
+	}, client.RetryConfig{
+		MaxRetries:       5,
+		RetryOnRateLimit: true,
+	})
+	if delResult.Err != nil {
+		fmt.Fprintf(os.Stderr, "[Warning] %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
+	}
+}
+
 // addContentMarkdown 处理 Markdown 模式的内容添加，支持嵌套结构、分批创建、表格 429 重试
 func addContentMarkdown(documentID, blockID, contentData, basePath string, uploadImages bool, index int, output string) error {
 	opts := converter.ConvertOptions{
@@ -208,6 +252,24 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 				fmt.Fprintf(os.Stderr, "[Warning] 嵌套子块创建失败: %v\n", nestedErr)
 			}
 			totalCreated += nestedCount
+		}
+	}
+
+	// QuoteContainer / Callout：遍历所有顶层节点清理飞书 API 异步生成的空子块。
+	// 必须在所有 createNestedChildren 完成后执行，确保 API 已稳定。
+	// 覆盖有子块和无子块（不在 nodeChildrenMap 中）的容器节点。
+	for i, node := range result.BlockNodes {
+		if i >= len(createdBlockIDs) {
+			break
+		}
+		if node.Block.BlockType == nil {
+			continue
+		}
+		switch *node.Block.BlockType {
+		case int(converter.BlockTypeQuoteContainer):
+			deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "QuoteContainer")
+		case int(converter.BlockTypeCallout):
+			deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "Callout")
 		}
 	}
 
