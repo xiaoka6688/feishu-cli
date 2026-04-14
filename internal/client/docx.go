@@ -20,7 +20,7 @@ const (
 )
 
 // CreateDocument creates a new document
-func CreateDocument(title string, folderToken string) (*larkdocx.Document, error) {
+func CreateDocument(title string, folderToken string, userAccessToken ...string) (*larkdocx.Document, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func CreateDocument(title string, folderToken string) (*larkdocx.Document, error
 			Build()).
 		Build()
 
-	resp, err := client.Docx.Document.Create(Context(), req)
+	resp, err := client.Docx.Document.Create(Context(), req, UserTokenOption(firstString(userAccessToken))...)
 	if err != nil {
 		return nil, fmt.Errorf("创建文档失败: %w", err)
 	}
