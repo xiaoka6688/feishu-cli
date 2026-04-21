@@ -96,12 +96,9 @@ var sendMessageCmd = &cobra.Command{
     --thread-id omt_xxx \
     --text "话题内继续聊"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.Validate(); err != nil {
-			return err
-		}
-
-		token := resolveOptionalUserToken(cmd)
-
+		// 参数校验放在 config.Validate() 之前：之前 mustMarkFlagRequired 由 cobra
+		// 在 RunE 前拦截 missing flag，移除后若先做 config 校验，无凭证用户
+		// 会先看到 config 错误而非参数错误。
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		threadID, _ := cmd.Flags().GetString("thread-id")
@@ -116,6 +113,13 @@ var sendMessageCmd = &cobra.Command{
 		} else if receiveIDType == "" || receiveID == "" {
 			return fmt.Errorf("必须指定 --thread-id，或同时指定 --receive-id-type 和 --receive-id")
 		}
+
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
+		token := resolveOptionalUserToken(cmd)
+
 		msgType, _ := cmd.Flags().GetString("msg-type")
 		content, _ := cmd.Flags().GetString("content")
 		contentFile, _ := cmd.Flags().GetString("content-file")
