@@ -96,15 +96,10 @@ var sendMessageCmd = &cobra.Command{
     --thread-id omt_xxx \
     --text "话题内继续聊"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// 参数校验放在 config.Validate() 之前：之前 mustMarkFlagRequired 由 cobra
-		// 在 RunE 前拦截 missing flag，移除后若先做 config 校验，无凭证用户
-		// 会先看到 config 错误而非参数错误。
 		receiveIDType, _ := cmd.Flags().GetString("receive-id-type")
 		receiveID, _ := cmd.Flags().GetString("receive-id")
 		threadID, _ := cmd.Flags().GetString("thread-id")
 		if threadID != "" {
-			// --thread-id 是 receive_id_type=thread_id 的语法糖，
-			// 为避免歧义，禁止同时传 --receive-id / --receive-id-type
 			if receiveIDType != "" || receiveID != "" {
 				return fmt.Errorf("--thread-id 与 --receive-id-type/--receive-id 互斥，只能指定一组")
 			}

@@ -50,7 +50,6 @@ func runDocTableDeleteColumns(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
 
-	// 参数验证
 	if start < 0 {
 		return fmt.Errorf("起始索引不能为负数")
 	}
@@ -66,12 +65,12 @@ func runDocTableDeleteColumns(cmd *cobra.Command, args []string) error {
 	deletedCount := end - start
 	if output == "json" {
 		return printJSON(map[string]any{
-			"document_id":         documentID,
-			"table_block_id":      tableBlockID,
-			"operation":           "delete_columns",
-			"column_start_index":  start,
-			"column_end_index":    end,
-			"deleted_count":       deletedCount,
+			"document_id":        documentID,
+			"table_block_id":     tableBlockID,
+			"operation":          "delete_columns",
+			"column_start_index": start,
+			"column_end_index":   end,
+			"deleted_count":      deletedCount,
 		})
 	}
 

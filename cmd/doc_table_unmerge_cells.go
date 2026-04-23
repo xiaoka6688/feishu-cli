@@ -47,7 +47,6 @@ func runDocTableUnmergeCells(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
 
-	// 参数验证
 	if row < 0 || col < 0 {
 		return fmt.Errorf("行列索引不能为负数")
 	}
@@ -59,11 +58,11 @@ func runDocTableUnmergeCells(cmd *cobra.Command, args []string) error {
 
 	if output == "json" {
 		return printJSON(map[string]any{
-			"document_id":     documentID,
-			"table_block_id":  tableBlockID,
-			"operation":       "unmerge_cells",
-			"row_index":       row,
-			"column_index":    col,
+			"document_id":    documentID,
+			"table_block_id": tableBlockID,
+			"operation":      "unmerge_cells",
+			"row_index":      row,
+			"column_index":   col,
 		})
 	}
 

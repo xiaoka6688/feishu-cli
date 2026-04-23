@@ -54,7 +54,6 @@ func runDocTableMergeCells(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
 
-	// 参数验证
 	if rowStart < 0 || colStart < 0 {
 		return fmt.Errorf("起始索引不能为负数")
 	}

@@ -160,9 +160,7 @@ func isEmptyTextBlock(block *larkdocx.Block) bool {
 
 // deleteContainerAutoEmptyBlock 删除 QuoteContainer/Callout 容器块中飞书 API 自动生成的空文本子块。
 // 飞书 API 在创建容器块时会异步在 index 0 插入一个空 Text 块，导致渲染时顶部出现多余空行。
-// 必须在 createNestedChildren 完成后调用，此时实际子块内容均非空。
-// 仅检查 index 0 处的子块（自动生成块始终插入到 index 0），不会误删用户显式创建的段落间空行。
-// 如果首次未发现空块，会短暂等待后重试，以应对 API 异步插入空块的时序问题。
+// 必须在 createNestedChildren 完成后调用；仅检查 index 0，不会误删段落间空行。
 // 对非容器块类型直接 no-op，由调用方无条件传入 block type 即可。
 func deleteContainerAutoEmptyBlock(documentID, parentID string, blockType int, userAccessToken string) {
 	var blockTypeName string
@@ -175,9 +173,7 @@ func deleteContainerAutoEmptyBlock(documentID, parentID string, blockType int, u
 		return
 	}
 
-	// 尝试多次查找并删除 index 0 处的自动生成空块，处理 API 异步插入的时序问题。
-	// 重试逻辑：首次立即检查；若 index 0 不是空块，说明自动生成块可能尚未出现或已被
-	// 我们的内容块推到其他位置，等待后重试以确保捕获异步插入的空块。
+	// 飞书 API 异步插入空子块，首次未命中时等待后重试。
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
 			time.Sleep(300 * time.Millisecond)
@@ -254,10 +250,7 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 	currentIndex := index
 
 	for i := 0; i < len(topLevelBlocks); i += batchSize {
-		end := i + batchSize
-		if end > len(topLevelBlocks) {
-			end = len(topLevelBlocks)
-		}
+		end := min(i+batchSize, len(topLevelBlocks))
 		batch := topLevelBlocks[i:end]
 
 		createdBlocks, _, err := client.CreateBlock(documentID, blockID, batch, currentIndex, userAccessToken)

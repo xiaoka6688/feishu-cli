@@ -188,21 +188,17 @@ var deleteReplyCmd = &cobra.Command{
 
 func init() {
 	commentCmd.AddCommand(replyCmd)
+	replyCmd.PersistentFlags().String("type", "docx", "文件类型（doc/docx/sheet/bitable）")
+	replyCmd.PersistentFlags().String("user-access-token", "", "User Access Token（删除/添加用户回复时必需）")
 
 	replyCmd.AddCommand(listReplyCmd)
-	listReplyCmd.Flags().String("type", "docx", "文件类型（doc/docx/sheet/bitable）")
 	listReplyCmd.Flags().Int("page-size", 50, "每页数量")
 	listReplyCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	listReplyCmd.Flags().String("user-access-token", "", "User Access Token（覆盖 App Token）")
 
 	replyCmd.AddCommand(addReplyCmd)
-	addReplyCmd.Flags().String("type", "docx", "文件类型（doc/docx/sheet/bitable）")
 	addReplyCmd.Flags().String("text", "", "回复内容（必填）")
 	addReplyCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	addReplyCmd.Flags().String("user-access-token", "", "User Access Token（推荐，以用户身份发布）")
 	_ = addReplyCmd.MarkFlagRequired("text")
 
 	replyCmd.AddCommand(deleteReplyCmd)
-	deleteReplyCmd.Flags().String("type", "docx", "文件类型（doc/docx/sheet/bitable）")
-	deleteReplyCmd.Flags().String("user-access-token", "", "User Access Token（删除用户回复时必需）")
 }
