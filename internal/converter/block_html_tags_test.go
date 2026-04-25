@@ -333,7 +333,7 @@ func TestExportSheetWithRowsCols(t *testing.T) {
 		t.Fatalf("Convert() error = %v", err)
 	}
 	got = strings.TrimSpace(got)
-	want := `<sheet token="sheet_xyz" rows="5" cols="8"/>`
+	want := `<sheet token="sheet" id="xyz" rows="5" cols="8"/>`
 	if got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
