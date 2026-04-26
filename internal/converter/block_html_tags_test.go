@@ -249,6 +249,28 @@ func TestImportFileWithViewType(t *testing.T) {
 	}
 }
 
+func TestImportVideoWithLocalSrc(t *testing.T) {
+	md := "<video src=\"./demo.mp4\" controls></video>\n"
+	conv := NewMarkdownToBlock([]byte(md), ConvertOptions{UploadImages: true}, "")
+	result, err := conv.ConvertWithTableData()
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if len(result.BlockNodes) != 1 {
+		t.Fatalf("expected 1 block, got %d", len(result.BlockNodes))
+	}
+	block := result.BlockNodes[0].Block
+	if int(BlockType(*block.BlockType)) != int(BlockTypeFile) {
+		t.Fatalf("expected File block type (23), got %d", *block.BlockType)
+	}
+	if block.File == nil || block.File.Name == nil || *block.File.Name != "demo.mp4" {
+		t.Fatalf("expected file name demo.mp4, got %#v", block.File)
+	}
+	if len(result.VideoSources) != 1 || result.VideoSources[0] != "./demo.mp4" {
+		t.Fatalf("expected video source ./demo.mp4, got %#v", result.VideoSources)
+	}
+}
+
 // ===========================================================================
 // Phase 3: Block-level HTML Tag Export Tests
 // ===========================================================================

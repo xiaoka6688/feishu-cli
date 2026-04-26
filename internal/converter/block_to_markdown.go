@@ -1024,12 +1024,25 @@ func (c *BlockToMarkdown) convertFile(block *larkdocx.Block) (string, error) {
 		return "", nil
 	}
 
-	var attrs []string
-	if block.File.Token != nil && *block.File.Token != "" {
-		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", *block.File.Token))
+	token := ""
+	if block.File.Token != nil {
+		token = *block.File.Token
 	}
-	if block.File.Name != nil && *block.File.Name != "" {
-		attrs = append(attrs, fmt.Sprintf("name=\"%s\"", *block.File.Name))
+	name := ""
+	if block.File.Name != nil {
+		name = *block.File.Name
+	}
+
+	if isVideoFilename(name) {
+		return c.convertVideoFile(token, name, block.File.ViewType)
+	}
+
+	var attrs []string
+	if token != "" {
+		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", token))
+	}
+	if name != "" {
+		attrs = append(attrs, fmt.Sprintf("name=\"%s\"", name))
 	}
 	if block.File.ViewType != nil && *block.File.ViewType > 0 {
 		attrs = append(attrs, fmt.Sprintf("view-type=\"%d\"", *block.File.ViewType))
@@ -1040,6 +1053,61 @@ func (c *BlockToMarkdown) convertFile(block *larkdocx.Block) (string, error) {
 	}
 
 	return fmt.Sprintf("<file %s/>\n", strings.Join(attrs, " ")), nil
+}
+
+func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (string, error) {
+	attrs := []string{"controls"}
+
+	if token != "" && c.options.DownloadImages {
+		c.imageCount++
+		filename := name
+		if filename == "" {
+			filename = fmt.Sprintf("video_%d.mp4", c.imageCount)
+		}
+		if filepath.Ext(filename) == "" {
+			filename += ".mp4"
+		}
+
+		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+			return "", fmt.Errorf("创建资源目录失败: %w", err)
+		}
+
+		localPath := filepath.Join(c.options.AssetsDir, filename)
+		dlOpts := client.DownloadMediaOptions{UserAccessToken: c.options.UserAccessToken, DocToken: c.options.DocumentID}
+		if tmpURL, err := client.GetMediaTempURL(token, dlOpts); err == nil {
+			if dlErr := client.DownloadFromURL(tmpURL, localPath); dlErr == nil {
+				attrs = append(attrs, fmt.Sprintf("src=\"%s\"", localPath))
+				return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
+			}
+		}
+		if err := client.DownloadMedia(token, localPath, dlOpts); err == nil {
+			attrs = append(attrs, fmt.Sprintf("src=\"%s\"", localPath))
+			return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
+		}
+	}
+
+	if token != "" {
+		attrs = append(attrs, fmt.Sprintf("src=\"feishu://media/%s\"", token))
+	}
+	if name != "" {
+		attrs = append(attrs, fmt.Sprintf("data-name=\"%s\"", name))
+	}
+	if viewType != nil && *viewType > 0 {
+		attrs = append(attrs, fmt.Sprintf("data-view-type=\"%d\"", *viewType))
+	}
+	if len(attrs) == 1 {
+		return "", nil
+	}
+	return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
+}
+
+func isVideoFilename(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *BlockToMarkdown) convertBitable(block *larkdocx.Block) (string, error) {

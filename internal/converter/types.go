@@ -111,6 +111,8 @@ type ConvertResult struct {
 	TableDatas   []*TableData // Table data in order of appearance, used for filling content
 	ImageStats   ImageStats   // 图片处理统计
 	ImageSources []string     // 每个 Image Block 对应的图片来源路径，与 BlockNodes 中的 Image Block 按序对应
+	VideoStats   VideoStats   // 视频处理统计
+	VideoSources []string     // 每个 Video(File) Block 对应的视频来源路径，与 BlockNodes 中的视频块按序对应
 }
 
 // ImageStats 记录图片处理统计
@@ -119,6 +121,14 @@ type ImageStats struct {
 	Success int // 上传成功数
 	Failed  int // 上传失败数
 	Skipped int // 跳过（feishu://media/ 引用或 upload-images=false）数
+}
+
+// VideoStats 记录视频处理统计
+type VideoStats struct {
+	Total   int // 需要上传/下载的视频总数
+	Success int // 成功数
+	Failed  int // 失败数
+	Skipped int // 跳过数
 }
 
 // MentionUserInfo 保存 @用户 的解析信息

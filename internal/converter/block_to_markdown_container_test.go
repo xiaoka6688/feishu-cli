@@ -1538,6 +1538,20 @@ func TestConvertFile(t *testing.T) {
 			},
 			want: `<file token="file_abc123" name="document.pdf"/>`,
 		},
+		{
+			name: "video file exported as video tag",
+			blocks: []*larkdocx.Block{
+				{
+					BlockId:   strPtr("file2"),
+					BlockType: intPtr(int(BlockTypeFile)),
+					File: &larkdocx.File{
+						Token: strPtr("file_video_123"),
+						Name:  strPtr("demo.mp4"),
+					},
+				},
+			},
+			want: `<video controls src="feishu://media/file_video_123" data-name="demo.mp4"></video>`,
+		},
 	}
 
 	for _, tt := range tests {

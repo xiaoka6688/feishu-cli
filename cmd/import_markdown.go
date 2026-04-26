@@ -251,6 +251,21 @@ type imageResult struct {
 	err     error
 }
 
+// videoTask 表示一个待上传的视频任务（底层使用 File Block）
+type videoTask struct {
+	index       int
+	fileBlockID string
+	source      string
+	basePath    string
+}
+
+// videoResult 表示视频上传结果
+type videoResult struct {
+	task    videoTask
+	success bool
+	err     error
+}
+
 // importStats 记录导入统计信息
 type importStats struct {
 	mu              sync.Mutex
@@ -267,6 +282,10 @@ type importStats struct {
 	imageSuccess    int
 	imageFailed     int
 	imageSkipped    int
+	videoTotal      int
+	videoSuccess    int
+	videoFailed     int
+	videoSkipped    int
 	fallbackSuccess int
 	fallbackFailed  int
 	phase1Duration  time.Duration
@@ -397,7 +416,7 @@ var importMarkdownCmd = &cobra.Command{
 		fmt.Println("=== 阶段 1/3: 创建文档块 ===")
 		phase1Start := time.Now()
 
-		dTasks, tTasks, iTasks, err := phase1CreateBlocks(documentID, segments, uploadImages, basePath, stats, verbose, userAccessToken)
+		dTasks, tTasks, iTasks, vTasks, err := phase1CreateBlocks(documentID, segments, uploadImages, basePath, stats, verbose, userAccessToken)
 		if err != nil {
 			return err
 		}
@@ -405,15 +424,19 @@ var importMarkdownCmd = &cobra.Command{
 		stats.phase1Duration = time.Since(phase1Start)
 		stats.tableTotal = len(tTasks)
 		stats.imageTotal = stats.imageSkipped + len(iTasks)
+		stats.videoTotal = stats.videoSkipped + len(vTasks)
 		phase1Summary := fmt.Sprintf("[阶段1] 完成 (%.1fs), 块: %d, 待填表格: %d, 待导入图表: %d",
 			stats.phase1Duration.Seconds(), stats.totalBlocks, len(tTasks), len(dTasks))
 		if len(iTasks) > 0 {
 			phase1Summary += fmt.Sprintf(", 待上传图片: %d", len(iTasks))
 		}
+		if len(vTasks) > 0 {
+			phase1Summary += fmt.Sprintf(", 待上传视频: %d", len(vTasks))
+		}
 		fmt.Println(phase1Summary + "\n")
 
 		// === 阶段 2/3: 并发处理 ===
-		if len(dTasks) > 0 || len(tTasks) > 0 || len(iTasks) > 0 {
+		if len(dTasks) > 0 || len(tTasks) > 0 || len(iTasks) > 0 || len(vTasks) > 0 {
 			// 阶段 1 大量 API 调用后等待配额恢复，避免阶段 2 立即触发频率限制
 			if stats.totalBlocks > 30 {
 				cooldown := 5 * time.Second
@@ -426,17 +449,24 @@ var importMarkdownCmd = &cobra.Command{
 			if len(iTasks) > 0 {
 				phase2Header += fmt.Sprintf(", 图片×%d", imageWorkers)
 			}
+			if len(vTasks) > 0 {
+				phase2Header += fmt.Sprintf(", 视频×%d", imageWorkers)
+			}
 			phase2Header += ") ==="
 			fmt.Println(phase2Header)
 			phase2Start := time.Now()
 
-			failedDiagrams := phase2ConcurrentProcess(documentID, dTasks, tTasks, iTasks, diagramWorkers, tableWorkers, imageWorkers, diagramRetries, stats, verbose, userAccessToken)
+			failedDiagrams := phase2ConcurrentProcess(documentID, dTasks, tTasks, iTasks, vTasks, diagramWorkers, tableWorkers, imageWorkers, diagramRetries, stats, verbose, userAccessToken)
 
 			stats.phase2Duration = time.Since(phase2Start)
 			imageUploadTotal := stats.imageTotal - stats.imageSkipped
+			videoUploadTotal := stats.videoTotal - stats.videoSkipped
 			var imageInfo string
 			if imageUploadTotal > 0 {
 				imageInfo = fmt.Sprintf(", 图片: %d/%d", stats.imageSuccess, imageUploadTotal)
+			}
+			if videoUploadTotal > 0 {
+				imageInfo += fmt.Sprintf(", 视频: %d/%d", stats.videoSuccess, videoUploadTotal)
 			}
 			fmt.Printf("[阶段2] 完成 (%.1fs), 图表: %d/%d, 表格: %d/%d%s\n\n",
 				stats.phase2Duration.Seconds(),
@@ -479,6 +509,10 @@ var importMarkdownCmd = &cobra.Command{
 				"image_success":    stats.imageSuccess,
 				"image_failed":     stats.imageFailed,
 				"image_skipped":    stats.imageSkipped,
+				"video_total":      stats.videoTotal,
+				"video_success":    stats.videoSuccess,
+				"video_failed":     stats.videoFailed,
+				"video_skipped":    stats.videoSkipped,
 				"duration_seconds": totalDuration.Seconds(),
 				"phase1_seconds":   stats.phase1Duration.Seconds(),
 				"phase2_seconds":   stats.phase2Duration.Seconds(),
@@ -501,6 +535,19 @@ var importMarkdownCmd = &cobra.Command{
 						stats.imageSuccess, stats.imageTotal, stats.imageSkipped)
 				} else {
 					fmt.Printf("  图片: %d/%d 成功\n", stats.imageSuccess, stats.imageTotal)
+				}
+			}
+			if stats.videoTotal > 0 {
+				if stats.videoSkipped == stats.videoTotal {
+					fmt.Printf("  视频: %d 个 (已创建占位块，资源需手动处理)\n", stats.videoSkipped)
+				} else if stats.videoFailed > 0 {
+					fmt.Printf("  视频: %d/%d 成功 (%d 跳过, %d 失败)\n",
+						stats.videoSuccess, stats.videoTotal, stats.videoSkipped, stats.videoFailed)
+				} else if stats.videoSkipped > 0 {
+					fmt.Printf("  视频: %d/%d 成功 (%d 跳过)\n",
+						stats.videoSuccess, stats.videoTotal, stats.videoSkipped)
+				} else {
+					fmt.Printf("  视频: %d/%d 成功\n", stats.videoSuccess, stats.videoTotal)
 				}
 			}
 			if stats.tableTotal > 0 {
@@ -535,10 +582,11 @@ func phase1CreateBlocks(
 	stats *importStats,
 	verbose bool,
 	userAccessToken string,
-) ([]diagramTask, []tableTask, []imageTask, error) {
+) ([]diagramTask, []tableTask, []imageTask, []videoTask, error) {
 	var dTasks []diagramTask
 	var tTasks []tableTask
 	var iTasks []imageTask
+	var vTasks []videoTask
 	diagramIdx := 0
 
 	for segIdx, seg := range segments {
@@ -555,11 +603,12 @@ func phase1CreateBlocks(
 			conv := converter.NewMarkdownToBlock([]byte(seg.content), options, basePath)
 			result, err := conv.ConvertWithTableData()
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("转换 Markdown 失败 (段落 %d): %w", segIdx+1, err)
+				return nil, nil, nil, nil, fmt.Errorf("转换 Markdown 失败 (段落 %d): %w", segIdx+1, err)
 			}
 
 			// 累加图片统计
 			stats.imageSkipped += result.ImageStats.Skipped
+			stats.videoSkipped += result.VideoStats.Skipped
 
 			if len(result.BlockNodes) == 0 {
 				continue
@@ -579,6 +628,7 @@ func phase1CreateBlocks(
 			// 记录表格块和图片块的索引
 			var tableIndices []int
 			var imageIndices []int
+			var videoIndices []int
 			for i, block := range topLevelBlocks {
 				if block.BlockType != nil {
 					switch *block.BlockType {
@@ -586,6 +636,10 @@ func phase1CreateBlocks(
 						tableIndices = append(tableIndices, i)
 					case int(converter.BlockTypeImage):
 						imageIndices = append(imageIndices, i)
+					case int(converter.BlockTypeFile):
+						if block.File != nil && block.File.Name != nil && isVideoFilename(*block.File.Name) {
+							videoIndices = append(videoIndices, i)
+						}
 					}
 				}
 			}
@@ -607,7 +661,7 @@ func phase1CreateBlocks(
 					RetryOnRateLimit: true,
 				})
 				if createResult.Err != nil {
-					return nil, nil, nil, fmt.Errorf("添加内容失败 (段落 %d): %w", segIdx+1, createResult.Err)
+					return nil, nil, nil, nil, fmt.Errorf("添加内容失败 (段落 %d): %w", segIdx+1, createResult.Err)
 				}
 				stats.totalBlocks += len(createResult.Value)
 
@@ -677,6 +731,21 @@ func phase1CreateBlocks(
 					basePath:     basePath,
 				})
 				imageSourceIdx++
+			}
+
+			videoSourceIdx := 0
+			for _, fileIdx := range videoIndices {
+				if fileIdx >= len(createdBlockIDs) || videoSourceIdx >= len(result.VideoSources) {
+					continue
+				}
+
+				vTasks = append(vTasks, videoTask{
+					index:       len(vTasks) + 1,
+					fileBlockID: createdBlockIDs[fileIdx],
+					source:      result.VideoSources[videoSourceIdx],
+					basePath:    basePath,
+				})
+				videoSourceIdx++
 			}
 
 		} else if seg.kind == "equation" {
@@ -761,7 +830,7 @@ func phase1CreateBlocks(
 		}
 	}
 
-	return dTasks, tTasks, iTasks, nil
+	return dTasks, tTasks, iTasks, vTasks, nil
 }
 
 // phase2ConcurrentProcess 并发处理图表导入、表格填充和图片上传
@@ -770,6 +839,7 @@ func phase2ConcurrentProcess(
 	dTasks []diagramTask,
 	tTasks []tableTask,
 	iTasks []imageTask,
+	vTasks []videoTask,
 	diagramWorkers int,
 	tableWorkers int,
 	imageWorkers int,
@@ -844,6 +914,28 @@ func phase2ConcurrentProcess(
 					stats.imageSuccess++
 				} else {
 					stats.imageFailed++
+				}
+				stats.mu.Unlock()
+			}(task)
+		}
+	}
+
+	if len(vTasks) > 0 {
+		videoSem := make(chan struct{}, imageWorkers)
+		for _, task := range vTasks {
+			wg.Add(1)
+			go func(t videoTask) {
+				defer wg.Done()
+				videoSem <- struct{}{}
+				defer func() { <-videoSem }()
+
+				result := processVideoTask(documentID, t, verbose, userAccessToken)
+
+				stats.mu.Lock()
+				if result.success {
+					stats.videoSuccess++
+				} else {
+					stats.videoFailed++
 				}
 				stats.mu.Unlock()
 			}(task)
@@ -1019,6 +1111,47 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 	return imageResult{task: task, success: true}
 }
 
+// processVideoTask 处理单个视频上传任务（File Block）
+func processVideoTask(documentID string, task videoTask, verbose bool, userAccessToken string) videoResult {
+	localPath, fileName, cleanup, err := resolveMediaSource(task.source, task.basePath, ".mp4")
+	if err != nil {
+		syncPrintf("  ✗ 视频 %d 解析失败 (%s): %v\n", task.index, task.source, err)
+		return videoResult{task: task, success: false, err: err}
+	}
+	defer cleanup()
+
+	extra := fmt.Sprintf(`{"drive_route_token":"%s"}`, documentID)
+	retryCfg := client.RetryConfig{
+		MaxRetries:       3,
+		MaxTotalAttempts: 6,
+		RetryOnRateLimit: true,
+	}
+
+	uploadResult := client.DoWithRetry(func() (string, http.Header, error) {
+		return client.UploadMediaWithExtra(localPath, "docx_file", task.fileBlockID, fileName, extra, userAccessToken)
+	}, retryCfg)
+	if uploadResult.Err != nil {
+		syncPrintf("  ✗ 视频 %d 上传失败 (%s): %v\n", task.index, task.source, uploadResult.Err)
+		return videoResult{task: task, success: false, err: uploadResult.Err}
+	}
+
+	fileToken := uploadResult.Value
+	replaceResult := client.DoVoidWithRetry(func() (http.Header, error) {
+		return client.UpdateBlock(documentID, task.fileBlockID, map[string]any{
+			"replace_file": map[string]any{"token": fileToken},
+		}, userAccessToken)
+	}, retryCfg)
+	if replaceResult.Err != nil {
+		syncPrintf("  ✗ 视频 %d 绑定失败 (token=%s): %v\n", task.index, fileToken, replaceResult.Err)
+		return videoResult{task: task, success: false, err: replaceResult.Err}
+	}
+
+	if verbose {
+		syncPrintf("  ✓ 视频 %d 成功 (%s)\n", task.index, task.source)
+	}
+	return videoResult{task: task, success: true}
+}
+
 func validateWorkerCount(flagName string, value int) error {
 	if value <= 0 {
 		return fmt.Errorf("--%s 必须大于 0，当前值: %d", flagName, value)
@@ -1029,6 +1162,10 @@ func validateWorkerCount(flagName string, value int) error {
 // resolveImageSource 解析图片来源为本地文件路径。
 // 返回本地路径、上传文件名和清理函数（外部 URL 下载的临时文件需要清理）。
 func resolveImageSource(source, basePath string) (string, string, func(), error) {
+	return resolveMediaSource(source, basePath, ".png")
+}
+
+func resolveMediaSource(source, basePath, defaultExt string) (string, string, func(), error) {
 	noop := func() {}
 
 	// HTTP(S) URL → 下载到临时文件
@@ -1045,7 +1182,7 @@ func resolveImageSource(source, basePath string) (string, string, func(), error)
 
 		ext := filepath.Ext(fileName)
 		if ext == "" || len(ext) > 10 {
-			ext = ".png"
+			ext = defaultExt
 		}
 		tmpFile, err := os.CreateTemp("", "feishu-img-*"+ext)
 		if err != nil {
@@ -1074,6 +1211,15 @@ func resolveImageSource(source, basePath string) (string, string, func(), error)
 		return "", "", nil, fmt.Errorf("图片文件不存在: %s", localPath)
 	}
 	return localPath, filepath.Base(localPath), noop, nil
+}
+
+func isVideoFilename(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv":
+		return true
+	default:
+		return false
+	}
 }
 
 // createNestedChildren 递归创建嵌套子块（如嵌套列表的父子关系）

@@ -1068,6 +1068,50 @@ func TestMarkdownToBlockImage(t *testing.T) {
 	}
 }
 
+func TestMarkdownToBlockVideo(t *testing.T) {
+	tests := []struct {
+		name     string
+		markdown string
+		options  ConvertOptions
+		checkFn  func(*testing.T, *ConvertResult)
+	}{
+		{
+			name:     "UploadImages=false 跳过 video",
+			markdown: "<video src=\"./demo.mp4\" controls></video>",
+			options:  ConvertOptions{UploadImages: false},
+			checkFn: func(t *testing.T, result *ConvertResult) {
+				if result.VideoStats.Skipped == 0 {
+					t.Error("expected video to be skipped")
+				}
+			},
+		},
+		{
+			name:     "本地路径 video 记录来源",
+			markdown: "<video src=\"./demo.mp4\" controls></video>",
+			options:  ConvertOptions{UploadImages: true},
+			checkFn: func(t *testing.T, result *ConvertResult) {
+				if result.VideoStats.Total != 1 {
+					t.Fatalf("expected 1 video total, got %d", result.VideoStats.Total)
+				}
+				if len(result.VideoSources) != 1 || result.VideoSources[0] != "./demo.mp4" {
+					t.Fatalf("unexpected video sources: %#v", result.VideoSources)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			converter := NewMarkdownToBlock([]byte(tt.markdown), tt.options, "")
+			result, err := converter.ConvertWithTableData()
+			if err != nil {
+				t.Fatalf("ConvertWithTableData failed: %v", err)
+			}
+			tt.checkFn(t, result)
+		})
+	}
+}
+
 func TestMarkdownToBlockLargeTable(t *testing.T) {
 	// 构造超过 9 行的大表格
 	markdown := "| 列1 | 列2 |\n|-----|-----|\n"

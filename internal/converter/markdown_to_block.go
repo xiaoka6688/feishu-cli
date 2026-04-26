@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -151,6 +152,8 @@ type MarkdownToBlock struct {
 	basePath     string // base path for resolving relative image paths
 	imageStats   ImageStats
 	imageSources []string // 记录每个 Image Block 对应的图片来源路径
+	videoStats   VideoStats
+	videoSources []string // 记录每个视频 File Block 对应的视频来源路径
 }
 
 // NewMarkdownToBlock creates a new converter
@@ -337,6 +340,8 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 
 	result.ImageStats = c.imageStats
 	result.ImageSources = c.imageSources
+	result.VideoStats = c.videoStats
+	result.VideoSources = c.videoSources
 	return result, nil
 }
 
@@ -406,6 +411,9 @@ func (c *MarkdownToBlock) convertParagraph(node *ast.Paragraph) ([]*BlockNode, e
 
 	// 检查段落是否只包含一个 <image> HTML 标签
 	if block := c.tryConvertHTMLImageParagraph(node); block != nil {
+		return []*BlockNode{{Block: block}}, nil
+	}
+	if block := c.tryConvertHTMLVideoParagraph(node); block != nil {
 		return []*BlockNode{{Block: block}}, nil
 	}
 
@@ -2199,6 +2207,8 @@ func (c *MarkdownToBlock) handleBlockHTMLTag(tag *HTMLTag) []*BlockNode {
 		return c.handleHTMLBitableBlock(tag)
 	case "file":
 		return c.handleHTMLFileBlock(tag)
+	case "video":
+		return c.handleHTMLVideoBlock(tag)
 	}
 	return nil
 }
@@ -2384,6 +2394,9 @@ func (c *MarkdownToBlock) convertInnerMarkdown(markdown string) []*BlockNode {
 	c.imageStats.Total += inner.imageStats.Total
 	c.imageStats.Skipped += inner.imageStats.Skipped
 	c.imageSources = append(c.imageSources, inner.imageSources...)
+	c.videoStats.Total += inner.videoStats.Total
+	c.videoStats.Skipped += inner.videoStats.Skipped
+	c.videoSources = append(c.videoSources, inner.videoSources...)
 	return result.BlockNodes
 }
 
@@ -2483,6 +2496,41 @@ func (c *MarkdownToBlock) handleHTMLFileBlock(tag *HTMLTag) []*BlockNode {
 	}}}
 }
 
+// handleHTMLVideoBlock 处理 <video src="./demo.mp4" controls></video> → File Block (type=23)
+func (c *MarkdownToBlock) handleHTMLVideoBlock(tag *HTMLTag) []*BlockNode {
+	src := strings.TrimSpace(tag.Attrs["src"])
+	if src == "" {
+		return nil
+	}
+
+	if strings.HasPrefix(src, "feishu://media/") {
+		c.videoStats.Skipped++
+		return []*BlockNode{{Block: c.createMediaPlaceholder("Video", src)}}
+	}
+
+	if !c.options.UploadImages {
+		c.videoStats.Skipped++
+		return []*BlockNode{{Block: c.createMediaPlaceholder("Video", src)}}
+	}
+
+	name := filepath.Base(src)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = "video.mp4"
+	}
+
+	c.videoStats.Total++
+	c.videoSources = append(c.videoSources, src)
+	blockType := int(BlockTypeFile)
+	viewType := 2
+	return []*BlockNode{{Block: &larkdocx.Block{
+		BlockType: &blockType,
+		File: &larkdocx.File{
+			Name:     &name,
+			ViewType: &viewType,
+		},
+	}}}
+}
+
 // parseHTMLIntAttrDefault 解析 HTML 属性中的整数值，失败返回 defaultVal
 func parseHTMLIntAttrDefault(s string, defaultVal int) int {
 	if s == "" {
@@ -2532,6 +2580,56 @@ func (c *MarkdownToBlock) tryConvertHTMLImageParagraph(node *ast.Paragraph) *lar
 		return nodes[0].Block
 	}
 	return nil
+}
+
+// tryConvertHTMLVideoParagraph 检查段落是否只包含一个 <video> HTML 标签
+func (c *MarkdownToBlock) tryConvertHTMLVideoParagraph(node *ast.Paragraph) *larkdocx.Block {
+	var htmlBuf bytes.Buffer
+	onlyHTML := true
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		if raw, ok := child.(*ast.RawHTML); ok {
+			for i := 0; i < raw.Segments.Len(); i++ {
+				seg := raw.Segments.At(i)
+				htmlBuf.Write(c.source[seg.Start:seg.Stop])
+			}
+		} else {
+			onlyHTML = false
+			break
+		}
+	}
+
+	if !onlyHTML || htmlBuf.Len() == 0 {
+		return nil
+	}
+
+	rawStr := strings.TrimSpace(htmlBuf.String())
+	if !IsHTMLTag(rawStr, "video") {
+		return nil
+	}
+
+	tag := ParseHTMLTag(rawStr)
+	if tag == nil {
+		return nil
+	}
+
+	nodes := c.handleHTMLVideoBlock(tag)
+	if len(nodes) > 0 {
+		return nodes[0].Block
+	}
+	return nil
+}
+
+func (c *MarkdownToBlock) createMediaPlaceholder(kind, ref string) *larkdocx.Block {
+	text := fmt.Sprintf("[%s: %s]", kind, ref)
+	blockType := int(BlockTypeText)
+	return &larkdocx.Block{
+		BlockType: &blockType,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{{
+				TextRun: &larkdocx.TextRun{Content: &text},
+			}},
+		},
+	}
 }
 
 // parseHTMLIntAttr 解析 HTML 属性中的整数值，失败返回 0
