@@ -28,6 +28,10 @@ var authRefreshCmd = &cobra.Command{
   0 - 成功
   1 - 失败（refresh_token 过期、网络错误等）`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := config.Validate(); err != nil {
+			return err
+		}
+
 		cfg := config.Get()
 		newToken, err := auth.ForceRefreshLocalToken(cfg.AppID, cfg.AppSecret, cfg.BaseURL)
 		if err != nil {
@@ -36,19 +40,26 @@ var authRefreshCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			return printJSON(map[string]any{
-				"status":             "ok",
-				"access_token":       auth.MaskToken(newToken.AccessToken),
-				"expires_at":         newToken.ExpiresAt.Format("2006-01-02 15:04:05"),
-				"refresh_expires_at": newToken.RefreshExpiresAt.Format("2006-01-02 15:04:05"),
-				"scope":              newToken.Scope,
-			})
+			result := map[string]any{
+				"status":       "ok",
+				"access_token": auth.MaskToken(newToken.AccessToken),
+				"expires_at":   newToken.ExpiresAt.Format("2006-01-02 15:04:05"),
+				"scope":        newToken.Scope,
+			}
+			if !newToken.RefreshExpiresAt.IsZero() {
+				result["refresh_expires_at"] = newToken.RefreshExpiresAt.Format("2006-01-02 15:04:05")
+			}
+			return printJSON(result)
 		}
 
 		fmt.Println("✓ Access Token 已刷新")
 		fmt.Printf("  Access Token:   %s\n", auth.MaskToken(newToken.AccessToken))
 		fmt.Printf("  有效期至:        %s\n", newToken.ExpiresAt.Format("2006-01-02 15:04:05"))
-		fmt.Printf("  Refresh 有效期:  %s\n", newToken.RefreshExpiresAt.Format("2006-01-02 15:04:05"))
+		if !newToken.RefreshExpiresAt.IsZero() {
+			fmt.Printf("  Refresh 有效期:  %s\n", newToken.RefreshExpiresAt.Format("2006-01-02 15:04:05"))
+		} else {
+			fmt.Println("  Refresh 有效期:  未知")
+		}
 		return nil
 	},
 }
