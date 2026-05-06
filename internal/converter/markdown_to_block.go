@@ -2503,9 +2503,35 @@ func (c *MarkdownToBlock) handleHTMLVideoBlock(tag *HTMLTag) []*BlockNode {
 		return nil
 	}
 
+	name := strings.TrimSpace(tag.Attrs["data-name"])
+	if name == "" {
+		name = strings.TrimSpace(tag.Attrs["name"])
+	}
+	viewType := parseHTMLIntAttrDefault(tag.Attrs["data-view-type"], 0)
+	if viewType <= 0 {
+		viewType = parseHTMLIntAttrDefault(tag.Attrs["view-type"], 2)
+	}
+	if viewType <= 0 {
+		viewType = 2
+	}
+
 	if strings.HasPrefix(src, "feishu://media/") {
-		c.videoStats.Skipped++
-		return []*BlockNode{{Block: c.createMediaPlaceholder("Video", src)}}
+		token := strings.TrimPrefix(src, "feishu://media/")
+		if token == "" {
+			return nil
+		}
+		blockType := int(BlockTypeFile)
+		file := &larkdocx.File{
+			Token:    &token,
+			ViewType: &viewType,
+		}
+		if name != "" {
+			file.Name = &name
+		}
+		return []*BlockNode{{Block: &larkdocx.Block{
+			BlockType: &blockType,
+			File:      file,
+		}}}
 	}
 
 	if !c.options.UploadImages {
@@ -2513,15 +2539,16 @@ func (c *MarkdownToBlock) handleHTMLVideoBlock(tag *HTMLTag) []*BlockNode {
 		return []*BlockNode{{Block: c.createMediaPlaceholder("Video", src)}}
 	}
 
-	name := filepath.Base(src)
 	if name == "." || name == string(filepath.Separator) || name == "" {
-		name = "video.mp4"
+		name = filepath.Base(src)
+		if name == "." || name == string(filepath.Separator) || name == "" {
+			name = "video.mp4"
+		}
 	}
 
 	c.videoStats.Total++
 	c.videoSources = append(c.videoSources, src)
 	blockType := int(BlockTypeFile)
-	viewType := 2
 	return []*BlockNode{{Block: &larkdocx.Block{
 		BlockType: &blockType,
 		File: &larkdocx.File{

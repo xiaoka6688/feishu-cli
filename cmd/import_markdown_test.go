@@ -5,7 +5,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
+	"github.com/riba2534/feishu-cli/internal/converter"
 )
 
 func TestValidateWorkerCount(t *testing.T) {
@@ -95,4 +99,91 @@ func TestResolveImageSourceHTTPURLWithoutPathName(t *testing.T) {
 	if filepath.Ext(localPath) != ".png" {
 		t.Fatalf("temp file ext = %q, want %q", filepath.Ext(localPath), ".png")
 	}
+}
+
+func TestAppendVideoTasksIncludesNestedVideosInTreeOrder(t *testing.T) {
+	topVideo := videoNode("top.mp4")
+	grid := &converter.BlockNode{
+		Block: blockWithType(converter.BlockTypeGrid),
+		Children: []*converter.BlockNode{
+			videoNode("nested-a.mp4"),
+			{
+				Block: blockWithType(converter.BlockTypeQuoteContainer),
+				Children: []*converter.BlockNode{
+					videoNode("nested-b.mp4"),
+				},
+			},
+		},
+	}
+
+	tasks := appendVideoTasks(nil,
+		[]*converter.BlockNode{topVideo, grid},
+		[]string{"top-id", "grid-id"},
+		map[int][]createdBlockNode{
+			1: {
+				{node: grid.Children[0], blockID: "nested-a-id"},
+				{node: grid.Children[1], blockID: "quote-id"},
+				{node: grid.Children[1].Children[0], blockID: "nested-b-id"},
+			},
+		},
+		[]string{"./top.mp4", "./nested-a.mp4", "./nested-b.mp4"},
+		"/tmp",
+	)
+
+	if len(tasks) != 3 {
+		t.Fatalf("len(tasks) = %d, want 3", len(tasks))
+	}
+	wantIDs := []string{"top-id", "nested-a-id", "nested-b-id"}
+	wantSources := []string{"./top.mp4", "./nested-a.mp4", "./nested-b.mp4"}
+	for i := range tasks {
+		if tasks[i].fileBlockID != wantIDs[i] || tasks[i].source != wantSources[i] {
+			t.Fatalf("task[%d] = {id:%q source:%q}, want {id:%q source:%q}",
+				i, tasks[i].fileBlockID, tasks[i].source, wantIDs[i], wantSources[i])
+		}
+	}
+}
+
+func TestProcessVideoTaskRejectsFilesOverUploadAllLimit(t *testing.T) {
+	baseDir := t.TempDir()
+	videoPath := filepath.Join(baseDir, "large.mp4")
+	f, err := os.Create(videoPath)
+	if err != nil {
+		t.Fatalf("create video: %v", err)
+	}
+	if err := f.Truncate(20*1024*1024 + 1); err != nil {
+		_ = f.Close()
+		t.Fatalf("truncate video: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close video: %v", err)
+	}
+
+	result := processVideoTask("doc-token", videoTask{
+		index:       1,
+		fileBlockID: "block-id",
+		source:      "large.mp4",
+		basePath:    baseDir,
+	}, false, "user-token")
+
+	if result.success {
+		t.Fatal("processVideoTask() success = true, want false")
+	}
+	if result.err == nil || !strings.Contains(result.err.Error(), "视频超过 20MB 限制") {
+		t.Fatalf("processVideoTask() err = %v, want 20MB limit error", result.err)
+	}
+}
+
+func videoNode(name string) *converter.BlockNode {
+	blockType := int(converter.BlockTypeFile)
+	return &converter.BlockNode{
+		Block: &larkdocx.Block{
+			BlockType: &blockType,
+			File:      &larkdocx.File{Name: &name},
+		},
+	}
+}
+
+func blockWithType(blockType converter.BlockType) *larkdocx.Block {
+	bt := int(blockType)
+	return &larkdocx.Block{BlockType: &bt}
 }

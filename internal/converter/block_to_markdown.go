@@ -23,6 +23,8 @@ type BlockToMarkdown struct {
 	childBlockIDs map[string]bool // 子块 ID 集合，这些块不应独立处理
 	options       ConvertOptions
 	imageCount    int
+	videoCount    int
+	videoFiles    map[string]bool
 	headingSeqs   []string                   // 标题自动编号状态，按深度索引（depth-1）
 	userCache     map[string]MentionUserInfo // 用户 ID → 信息缓存
 }
@@ -1033,7 +1035,7 @@ func (c *BlockToMarkdown) convertFile(block *larkdocx.Block) (string, error) {
 		name = *block.File.Name
 	}
 
-	if isVideoFilename(name) {
+	if IsVideoFilename(name) {
 		return c.convertVideoFile(token, name, block.File.ViewType)
 	}
 
@@ -1059,51 +1061,85 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 	attrs := []string{"controls"}
 
 	if token != "" && c.options.DownloadImages {
-		c.imageCount++
-		filename := name
-		if filename == "" {
-			filename = fmt.Sprintf("video_%d.mp4", c.imageCount)
-		}
-		if filepath.Ext(filename) == "" {
-			filename += ".mp4"
-		}
-
 		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
 			return "", fmt.Errorf("创建资源目录失败: %w", err)
 		}
 
-		localPath := filepath.Join(c.options.AssetsDir, filename)
+		localPath := c.nextVideoAssetPath(name)
 		dlOpts := client.DownloadMediaOptions{UserAccessToken: c.options.UserAccessToken, DocToken: c.options.DocumentID}
 		if tmpURL, err := client.GetMediaTempURL(token, dlOpts); err == nil {
 			if dlErr := client.DownloadFromURL(tmpURL, localPath); dlErr == nil {
-				attrs = append(attrs, fmt.Sprintf("src=\"%s\"", localPath))
+				attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
 				return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
+			} else if c.options.Debug {
+				fmt.Fprintf(os.Stderr, "[Debug] 视频下载失败 (URL方式): %v\n", dlErr)
 			}
+		} else if c.options.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] 获取视频临时URL失败: %v\n", err)
 		}
 		if err := client.DownloadMedia(token, localPath, dlOpts); err == nil {
-			attrs = append(attrs, fmt.Sprintf("src=\"%s\"", localPath))
+			attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
 			return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
+		} else if c.options.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] 视频SDK下载失败: %v\n", err)
 		}
 	}
 
 	if token != "" {
 		attrs = append(attrs, fmt.Sprintf("src=\"feishu://media/%s\"", token))
 	}
-	if name != "" {
-		attrs = append(attrs, fmt.Sprintf("data-name=\"%s\"", name))
-	}
-	if viewType != nil && *viewType > 0 {
-		attrs = append(attrs, fmt.Sprintf("data-view-type=\"%d\"", *viewType))
-	}
+	attrs = appendVideoMetadata(attrs, name, viewType)
 	if len(attrs) == 1 {
 		return "", nil
 	}
 	return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
 }
 
-func isVideoFilename(name string) bool {
+func appendVideoMetadata(attrs []string, name string, viewType *int) []string {
+	if name != "" {
+		attrs = append(attrs, fmt.Sprintf("data-name=\"%s\"", name))
+	}
+	if viewType != nil && *viewType > 0 {
+		attrs = append(attrs, fmt.Sprintf("data-view-type=\"%d\"", *viewType))
+	}
+	return attrs
+}
+
+func (c *BlockToMarkdown) nextVideoAssetPath(name string) string {
+	c.videoCount++
+	filename := name
+	if filename == "" {
+		filename = fmt.Sprintf("video_%d.mp4", c.videoCount)
+	}
+	if filepath.Ext(filename) == "" {
+		filename += ".mp4"
+	}
+	return filepath.Join(c.options.AssetsDir, c.reserveUniqueVideoFilename(filename))
+}
+
+func (c *BlockToMarkdown) reserveUniqueVideoFilename(filename string) string {
+	if c.videoFiles == nil {
+		c.videoFiles = make(map[string]bool)
+	}
+
+	ext := filepath.Ext(filename)
+	base := strings.TrimSuffix(filename, ext)
+	candidate := filename
+	for i := 2; ; i++ {
+		if !c.videoFiles[candidate] {
+			if _, err := os.Stat(filepath.Join(c.options.AssetsDir, candidate)); os.IsNotExist(err) {
+				c.videoFiles[candidate] = true
+				return candidate
+			}
+		}
+		candidate = fmt.Sprintf("%s_%d%s", base, i, ext)
+	}
+}
+
+// IsVideoFilename reports whether name uses an extension that should roundtrip as a video file.
+func IsVideoFilename(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv":
+	case ".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv", ".flv", ".wmv", ".mpeg", ".mpg", ".3gp", ".ogv":
 		return true
 	default:
 		return false

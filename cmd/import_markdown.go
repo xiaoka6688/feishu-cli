@@ -446,10 +446,11 @@ var importMarkdownCmd = &cobra.Command{
 				time.Sleep(cooldown)
 			}
 			phase2Header := fmt.Sprintf("=== 阶段 2/3: 并发处理 (图表×%d, 表格×%d", diagramWorkers, tableWorkers)
-			if len(iTasks) > 0 {
+			if len(iTasks) > 0 && len(vTasks) > 0 {
+				phase2Header += fmt.Sprintf(", 图片+视频×%d", imageWorkers)
+			} else if len(iTasks) > 0 {
 				phase2Header += fmt.Sprintf(", 图片×%d", imageWorkers)
-			}
-			if len(vTasks) > 0 {
+			} else if len(vTasks) > 0 {
 				phase2Header += fmt.Sprintf(", 视频×%d", imageWorkers)
 			}
 			phase2Header += ") ==="
@@ -614,21 +615,16 @@ func phase1CreateBlocks(
 				continue
 			}
 
-			// 提取顶层块，记录带有嵌套子块的节点
+			// 提取顶层块，嵌套子块稍后按 BlockNode 树顺序创建
 			var topLevelBlocks []*larkdocx.Block
-			nodeChildrenMap := map[int][]*converter.BlockNode{} // 顶层索引 → 嵌套子节点
 
-			for i, node := range result.BlockNodes {
+			for _, node := range result.BlockNodes {
 				topLevelBlocks = append(topLevelBlocks, node.Block)
-				if len(node.Children) > 0 {
-					nodeChildrenMap[i] = node.Children
-				}
 			}
 
 			// 记录表格块和图片块的索引
 			var tableIndices []int
 			var imageIndices []int
-			var videoIndices []int
 			for i, block := range topLevelBlocks {
 				if block.BlockType != nil {
 					switch *block.BlockType {
@@ -636,10 +632,6 @@ func phase1CreateBlocks(
 						tableIndices = append(tableIndices, i)
 					case int(converter.BlockTypeImage):
 						imageIndices = append(imageIndices, i)
-					case int(converter.BlockTypeFile):
-						if block.File != nil && block.File.Name != nil && isVideoFilename(*block.File.Name) {
-							videoIndices = append(videoIndices, i)
-						}
 					}
 				}
 			}
@@ -672,19 +664,23 @@ func phase1CreateBlocks(
 				}
 			}
 
-			// 递归创建嵌套子块（如嵌套列表）
-			for idx, children := range nodeChildrenMap {
-				if idx < len(createdBlockIDs) {
-					parentID := createdBlockIDs[idx]
+			nestedCreatedByTop := map[int][]createdBlockNode{}
 
-					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children, userAccessToken)
-					if nestedErr != nil {
-						if verbose {
-							syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
-						}
-					}
-					stats.totalBlocks += nestedCount
+			// 递归创建嵌套子块（如嵌套列表）
+			for idx, node := range result.BlockNodes {
+				if idx >= len(createdBlockIDs) || len(node.Children) == 0 {
+					continue
 				}
+				parentID := createdBlockIDs[idx]
+
+				nestedCount, nestedCreated, nestedErr := createNestedChildren(documentID, parentID, node.Children, userAccessToken)
+				if nestedErr != nil {
+					if verbose {
+						syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
+					}
+				}
+				stats.totalBlocks += nestedCount
+				nestedCreatedByTop[idx] = nestedCreated
 			}
 
 			// QuoteContainer / Callout：遍历所有顶层节点清理飞书 API 异步生成的空子块。
@@ -733,20 +729,7 @@ func phase1CreateBlocks(
 				imageSourceIdx++
 			}
 
-			videoSourceIdx := 0
-			for _, fileIdx := range videoIndices {
-				if fileIdx >= len(createdBlockIDs) || videoSourceIdx >= len(result.VideoSources) {
-					continue
-				}
-
-				vTasks = append(vTasks, videoTask{
-					index:       len(vTasks) + 1,
-					fileBlockID: createdBlockIDs[fileIdx],
-					source:      result.VideoSources[videoSourceIdx],
-					basePath:    basePath,
-				})
-				videoSourceIdx++
-			}
+			vTasks = appendVideoTasks(vTasks, result.BlockNodes, createdBlockIDs, nestedCreatedByTop, result.VideoSources, basePath)
 
 		} else if seg.kind == "equation" {
 			// 块级公式：飞书 API 不支持创建 Equation 块（type=16），
@@ -1113,6 +1096,8 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 
 // processVideoTask 处理单个视频上传任务（File Block）
 func processVideoTask(documentID string, task videoTask, verbose bool, userAccessToken string) videoResult {
+	const maxRetries = 5
+
 	localPath, fileName, cleanup, err := resolveMediaSource(task.source, task.basePath, ".mp4")
 	if err != nil {
 		syncPrintf("  ✗ 视频 %d 解析失败 (%s): %v\n", task.index, task.source, err)
@@ -1120,11 +1105,29 @@ func processVideoTask(documentID string, task videoTask, verbose bool, userAcces
 	}
 	defer cleanup()
 
+	const maxVideoSize = 20 * 1024 * 1024
+	fi, err := os.Stat(localPath)
+	if err != nil {
+		syncPrintf("  ✗ 视频 %d 文件信息获取失败: %v\n", task.index, err)
+		return videoResult{task: task, success: false, err: err}
+	}
+	if fi.Size() > maxVideoSize {
+		err := fmt.Errorf("视频超过 20MB 限制 (%d MB)，当前上传通道暂不支持大文件分块上传", fi.Size()/(1024*1024))
+		syncPrintf("  ✗ 视频 %d: %v\n", task.index, err)
+		return videoResult{task: task, success: false, err: err}
+	}
+
 	extra := fmt.Sprintf(`{"drive_route_token":"%s"}`, documentID)
 	retryCfg := client.RetryConfig{
-		MaxRetries:       3,
-		MaxTotalAttempts: 6,
+		MaxRetries:       maxRetries,
+		MaxTotalAttempts: maxRetries + 3,
 		RetryOnRateLimit: true,
+		OnRetry: func(attempt int, err error, wait time.Duration) {
+			if verbose {
+				syncPrintf("  ⚠ 视频 %d 上传重试 %d/%d (等待 %.1fs): %v\n",
+					task.index, attempt, maxRetries, wait.Seconds(), err)
+			}
+		},
 	}
 
 	uploadResult := client.DoWithRetry(func() (string, http.Header, error) {
@@ -1213,20 +1216,11 @@ func resolveMediaSource(source, basePath, defaultExt string) (string, string, fu
 	return localPath, filepath.Base(localPath), noop, nil
 }
 
-func isVideoFilename(name string) bool {
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv":
-		return true
-	default:
-		return false
-	}
-}
-
 // createNestedChildren 递归创建嵌套子块（如嵌套列表的父子关系）
 // 返回创建的块总数和可能的错误
-func createNestedChildren(documentID string, parentBlockID string, children []*converter.BlockNode, userAccessToken string) (int, error) {
+func createNestedChildren(documentID string, parentBlockID string, children []*converter.BlockNode, userAccessToken string) (int, []createdBlockNode, error) {
 	if len(children) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 
 	var childBlocks []*larkdocx.Block
@@ -1237,6 +1231,7 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 	const batchSize = 50
 	var createdBlockIDs []string
 	totalCreated := 0
+	var createdNodes []createdBlockNode
 
 	for i := 0; i < len(childBlocks); i += batchSize {
 		end := i + batchSize
@@ -1252,7 +1247,7 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 			RetryOnRateLimit: true,
 		})
 		if result.Err != nil {
-			return totalCreated, fmt.Errorf("创建嵌套子块失败 (parent=%s): %w", parentBlockID, result.Err)
+			return totalCreated, createdNodes, fmt.Errorf("创建嵌套子块失败 (parent=%s): %w", parentBlockID, result.Err)
 		}
 		totalCreated += len(result.Value)
 
@@ -1269,11 +1264,13 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 			continue
 		}
 		childID := createdBlockIDs[i]
+		createdNodes = append(createdNodes, createdBlockNode{node: child, blockID: childID})
 		if len(child.Children) > 0 {
-			nestedCount, err := createNestedChildren(documentID, childID, child.Children, userAccessToken)
+			nestedCount, nestedCreated, err := createNestedChildren(documentID, childID, child.Children, userAccessToken)
 			totalCreated += nestedCount
+			createdNodes = append(createdNodes, nestedCreated...)
 			if err != nil {
-				return totalCreated, err
+				return totalCreated, createdNodes, err
 			}
 		}
 		// QuoteContainer / Callout 嵌套场景：无论是否有子块，均清理 API 自动生成的空块
@@ -1282,7 +1279,58 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 		}
 	}
 
-	return totalCreated, nil
+	return totalCreated, createdNodes, nil
+}
+
+type createdBlockNode struct {
+	node    *converter.BlockNode
+	blockID string
+}
+
+func appendVideoTasks(
+	tasks []videoTask,
+	topNodes []*converter.BlockNode,
+	topBlockIDs []string,
+	nestedCreatedByTop map[int][]createdBlockNode,
+	videoSources []string,
+	basePath string,
+) []videoTask {
+	sourceIdx := 0
+
+	appendIfVideo := func(node *converter.BlockNode, blockID string) {
+		if sourceIdx >= len(videoSources) || !isVideoBlockNode(node) {
+			return
+		}
+		tasks = append(tasks, videoTask{
+			index:       len(tasks) + 1,
+			fileBlockID: blockID,
+			source:      videoSources[sourceIdx],
+			basePath:    basePath,
+		})
+		sourceIdx++
+	}
+
+	for i, node := range topNodes {
+		if i >= len(topBlockIDs) {
+			break
+		}
+		appendIfVideo(node, topBlockIDs[i])
+		for _, nested := range nestedCreatedByTop[i] {
+			appendIfVideo(nested.node, nested.blockID)
+		}
+	}
+
+	return tasks
+}
+
+func isVideoBlockNode(node *converter.BlockNode) bool {
+	if node == nil || node.Block == nil || node.Block.BlockType == nil {
+		return false
+	}
+	if *node.Block.BlockType != int(converter.BlockTypeFile) || node.Block.File == nil || node.Block.File.Name == nil {
+		return false
+	}
+	return converter.IsVideoFilename(*node.Block.File.Name)
 }
 
 // phase3HandleFallbacks 处理失败的图表，降级为代码块

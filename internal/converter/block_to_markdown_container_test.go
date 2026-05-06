@@ -1,6 +1,8 @@
 package converter
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1545,12 +1547,13 @@ func TestConvertFile(t *testing.T) {
 					BlockId:   strPtr("file2"),
 					BlockType: intPtr(int(BlockTypeFile)),
 					File: &larkdocx.File{
-						Token: strPtr("file_video_123"),
-						Name:  strPtr("demo.mp4"),
+						Token:    strPtr("file_video_123"),
+						Name:     strPtr("demo.mp4"),
+						ViewType: intPtr(1),
 					},
 				},
 			},
-			want: `<video controls src="feishu://media/file_video_123" data-name="demo.mp4"></video>`,
+			want: `<video controls src="feishu://media/file_video_123" data-name="demo.mp4" data-view-type="1"></video>`,
 		},
 	}
 
@@ -1567,6 +1570,81 @@ func TestConvertFile(t *testing.T) {
 				t.Errorf("Convert() got:\n%s\n\nwant:\n%s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestVideoAssetFilenamesUseIndependentCounterAndAvoidCollisions(t *testing.T) {
+	assetsDir := t.TempDir()
+	conv := NewBlockToMarkdown(nil, ConvertOptions{AssetsDir: assetsDir})
+
+	first := conv.nextVideoAssetPath("")
+	second := conv.nextVideoAssetPath("")
+	if filepath.Base(first) != "video_1.mp4" || filepath.Base(second) != "video_2.mp4" {
+		t.Fatalf("default video names = %q, %q; want video_1.mp4, video_2.mp4", filepath.Base(first), filepath.Base(second))
+	}
+
+	existing := filepath.Join(assetsDir, "demo.mp4")
+	if err := os.WriteFile(existing, []byte("reserved"), 0644); err != nil {
+		t.Fatalf("write existing video: %v", err)
+	}
+	third := conv.nextVideoAssetPath("demo.mp4")
+	fourth := conv.nextVideoAssetPath("demo.mp4")
+	if filepath.Base(third) != "demo_2.mp4" || filepath.Base(fourth) != "demo_3.mp4" {
+		t.Fatalf("deduped names = %q, %q; want demo_2.mp4, demo_3.mp4", filepath.Base(third), filepath.Base(fourth))
+	}
+}
+
+func TestIsVideoFilenameRecognizesCommonFormats(t *testing.T) {
+	for _, name := range []string{"a.mp4", "a.mov", "a.m4v", "a.webm", "a.avi", "a.mkv", "a.flv", "a.wmv", "a.mpeg", "a.mpg", "a.3gp", "a.ogv"} {
+		if !IsVideoFilename(name) {
+			t.Fatalf("IsVideoFilename(%q) = false, want true", name)
+		}
+	}
+	if IsVideoFilename("a.pdf") {
+		t.Fatal("IsVideoFilename(a.pdf) = true, want false")
+	}
+}
+
+func TestRoundtripVideoFilePreservesTokenNameAndViewType(t *testing.T) {
+	blocks := []*larkdocx.Block{
+		{
+			BlockId:   strPtr("video1"),
+			BlockType: intPtr(int(BlockTypeFile)),
+			File: &larkdocx.File{
+				Token:    strPtr("file_video_123"),
+				Name:     strPtr("demo.mp4"),
+				ViewType: intPtr(1),
+			},
+		},
+	}
+
+	exporter := NewBlockToMarkdown(blocks, ConvertOptions{})
+	md, err := exporter.Convert()
+	if err != nil {
+		t.Fatalf("export video: %v", err)
+	}
+
+	importer := NewMarkdownToBlock([]byte(md), ConvertOptions{UploadImages: true}, "")
+	result, err := importer.ConvertWithTableData()
+	if err != nil {
+		t.Fatalf("import video: %v", err)
+	}
+	if len(result.BlockNodes) != 1 {
+		t.Fatalf("len(BlockNodes) = %d, want 1", len(result.BlockNodes))
+	}
+
+	file := result.BlockNodes[0].Block.File
+	if file == nil {
+		t.Fatal("expected File block after roundtrip")
+	}
+	if file.Token == nil || *file.Token != "file_video_123" {
+		t.Fatalf("token = %#v, want file_video_123", file.Token)
+	}
+	if file.Name == nil || *file.Name != "demo.mp4" {
+		t.Fatalf("name = %#v, want demo.mp4", file.Name)
+	}
+	if file.ViewType == nil || *file.ViewType != 1 {
+		t.Fatalf("viewType = %#v, want 1", file.ViewType)
 	}
 }
 

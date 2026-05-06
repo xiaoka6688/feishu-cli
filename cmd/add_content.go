@@ -275,7 +275,7 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 	for idx, children := range nodeChildrenMap {
 		if idx < len(createdBlockIDs) {
 			parentID := createdBlockIDs[idx]
-			nestedCount, nestedErr := createNestedChildren(documentID, parentID, children, userAccessToken)
+			nestedCount, _, nestedErr := createNestedChildren(documentID, parentID, children, userAccessToken)
 			if nestedErr != nil {
 				fmt.Fprintf(os.Stderr, "[Warning] 嵌套子块创建失败: %v\n", nestedErr)
 			}
