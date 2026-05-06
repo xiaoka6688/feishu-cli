@@ -168,8 +168,8 @@ func TestProcessVideoTaskRejectsFilesOverUploadAllLimit(t *testing.T) {
 	if result.success {
 		t.Fatal("processVideoTask() success = true, want false")
 	}
-	if result.err == nil || !strings.Contains(result.err.Error(), "视频超过 20MB 限制") {
-		t.Fatalf("processVideoTask() err = %v, want 20MB limit error", result.err)
+	if result.err == nil || !strings.Contains(result.err.Error(), "视频超过") {
+		t.Fatalf("processVideoTask() err = %v, want video size limit error", result.err)
 	}
 }
 

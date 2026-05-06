@@ -1089,9 +1089,8 @@ func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (s
 		attrs = append(attrs, fmt.Sprintf("src=\"feishu://media/%s\"", token))
 	}
 	attrs = appendVideoMetadata(attrs, name, viewType)
-	if len(attrs) == 1 {
-		return "", nil
-	}
+	// 即使没有 token 也输出最小占位标签，避免视频块在导出 Markdown 中被静默丢失。
+	// 与 appendVideoMetadata 现有风格一致，name 不做额外转义。
 	return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
 }
 

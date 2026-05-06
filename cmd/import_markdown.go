@@ -22,6 +22,10 @@ import (
 // printMu 保护并发 goroutine 的日志输出不交叉
 var printMu sync.Mutex
 
+// maxInlineVideoSize 视频通过 drive_media 接口直传的大小上限（字节）。
+// 飞书该接口暂不支持分块上传，超过此值的视频会被拒绝；后续支持分块上传后可放宽。
+const maxInlineVideoSize = 20 * 1024 * 1024
+
 // syncPrintf 线程安全的 Printf，用于并发阶段的日志输出
 func syncPrintf(format string, a ...any) {
 	printMu.Lock()
@@ -462,18 +466,18 @@ var importMarkdownCmd = &cobra.Command{
 			stats.phase2Duration = time.Since(phase2Start)
 			imageUploadTotal := stats.imageTotal - stats.imageSkipped
 			videoUploadTotal := stats.videoTotal - stats.videoSkipped
-			var imageInfo string
+			var mediaInfo string
 			if imageUploadTotal > 0 {
-				imageInfo = fmt.Sprintf(", 图片: %d/%d", stats.imageSuccess, imageUploadTotal)
+				mediaInfo = fmt.Sprintf(", 图片: %d/%d", stats.imageSuccess, imageUploadTotal)
 			}
 			if videoUploadTotal > 0 {
-				imageInfo += fmt.Sprintf(", 视频: %d/%d", stats.videoSuccess, videoUploadTotal)
+				mediaInfo += fmt.Sprintf(", 视频: %d/%d", stats.videoSuccess, videoUploadTotal)
 			}
 			fmt.Printf("[阶段2] 完成 (%.1fs), 图表: %d/%d, 表格: %d/%d%s\n\n",
 				stats.phase2Duration.Seconds(),
 				stats.diagramSuccess, stats.diagramTotal,
 				stats.tableSuccess, stats.tableTotal,
-				imageInfo)
+				mediaInfo)
 
 			// === 阶段 3/3: 降级处理 ===
 			if len(failedDiagrams) > 0 {
@@ -880,15 +884,21 @@ func phase2ConcurrentProcess(
 		}(task)
 	}
 
+	// 图片和视频共用一个媒体上传信号量（飞书 drive_media 上传 API 限制约 5 QPS，
+	// 必须把图片和视频放进同一个并发池，否则总并发会变为 imageWorkers*2，超出 QPS）
+	var mediaSem chan struct{}
+	if len(iTasks) > 0 || len(vTasks) > 0 {
+		mediaSem = make(chan struct{}, imageWorkers)
+	}
+
 	// 启动图片上传工作
 	if len(iTasks) > 0 {
-		imageSem := make(chan struct{}, imageWorkers)
 		for _, task := range iTasks {
 			wg.Add(1)
 			go func(t imageTask) {
 				defer wg.Done()
-				imageSem <- struct{}{}
-				defer func() { <-imageSem }()
+				mediaSem <- struct{}{}
+				defer func() { <-mediaSem }()
 
 				result := processImageTask(documentID, t, verbose, userAccessToken)
 
@@ -904,13 +914,12 @@ func phase2ConcurrentProcess(
 	}
 
 	if len(vTasks) > 0 {
-		videoSem := make(chan struct{}, imageWorkers)
 		for _, task := range vTasks {
 			wg.Add(1)
 			go func(t videoTask) {
 				defer wg.Done()
-				videoSem <- struct{}{}
-				defer func() { <-videoSem }()
+				mediaSem <- struct{}{}
+				defer func() { <-mediaSem }()
 
 				result := processVideoTask(documentID, t, verbose, userAccessToken)
 
@@ -1047,7 +1056,7 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 		return imageResult{task: task, success: false, err: err}
 	}
 	if fi.Size() > maxImageSize {
-		err := fmt.Errorf("图片超过 20MB 限制 (%d MB)", fi.Size()/(1024*1024))
+		err := fmt.Errorf("图片超过 20MB 限制 (%.1f MB)", float64(fi.Size())/(1024*1024))
 		syncPrintf("  ✗ 图片 %d: %v\n", task.index, err)
 		return imageResult{task: task, success: false, err: err}
 	}
@@ -1098,23 +1107,34 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 func processVideoTask(documentID string, task videoTask, verbose bool, userAccessToken string) videoResult {
 	const maxRetries = 5
 
+	failWith := func(reason string, err error) videoResult {
+		// 视频上传失败：把阶段 1 创建的空 File 块替换为可见占位 Text 块，避免文档里留孤儿
+		fileName := pathpkg.Base(task.source)
+		if fileName == "" || fileName == "." || fileName == "/" {
+			fileName = task.source
+		}
+		replaceFailedVideoBlock(documentID, task, fileName, reason, userAccessToken)
+		return videoResult{task: task, success: false, err: err}
+	}
+
 	localPath, fileName, cleanup, err := resolveMediaSource(task.source, task.basePath, ".mp4")
 	if err != nil {
 		syncPrintf("  ✗ 视频 %d 解析失败 (%s): %v\n", task.index, task.source, err)
-		return videoResult{task: task, success: false, err: err}
+		return failWith(fmt.Sprintf("解析失败: %v", err), err)
 	}
 	defer cleanup()
 
-	const maxVideoSize = 20 * 1024 * 1024
 	fi, err := os.Stat(localPath)
 	if err != nil {
 		syncPrintf("  ✗ 视频 %d 文件信息获取失败: %v\n", task.index, err)
-		return videoResult{task: task, success: false, err: err}
+		return failWith(fmt.Sprintf("文件信息获取失败: %v", err), err)
 	}
-	if fi.Size() > maxVideoSize {
-		err := fmt.Errorf("视频超过 20MB 限制 (%d MB)，当前上传通道暂不支持大文件分块上传", fi.Size()/(1024*1024))
+	if fi.Size() > maxInlineVideoSize {
+		sizeMB := float64(fi.Size()) / (1024 * 1024)
+		err := fmt.Errorf("视频超过 %.1f MB 限制 (当前 %.1f MB)，当前上传通道暂不支持大文件分块上传",
+			float64(maxInlineVideoSize)/(1024*1024), sizeMB)
 		syncPrintf("  ✗ 视频 %d: %v\n", task.index, err)
-		return videoResult{task: task, success: false, err: err}
+		return failWith(fmt.Sprintf("超过 %.1f MB 限制", float64(maxInlineVideoSize)/(1024*1024)), err)
 	}
 
 	extra := fmt.Sprintf(`{"drive_route_token":"%s"}`, documentID)
@@ -1135,7 +1155,7 @@ func processVideoTask(documentID string, task videoTask, verbose bool, userAcces
 	}, retryCfg)
 	if uploadResult.Err != nil {
 		syncPrintf("  ✗ 视频 %d 上传失败 (%s): %v\n", task.index, task.source, uploadResult.Err)
-		return videoResult{task: task, success: false, err: uploadResult.Err}
+		return failWith(fmt.Sprintf("上传失败: %v", uploadResult.Err), uploadResult.Err)
 	}
 
 	fileToken := uploadResult.Value
@@ -1146,13 +1166,60 @@ func processVideoTask(documentID string, task videoTask, verbose bool, userAcces
 	}, retryCfg)
 	if replaceResult.Err != nil {
 		syncPrintf("  ✗ 视频 %d 绑定失败 (token=%s): %v\n", task.index, fileToken, replaceResult.Err)
-		return videoResult{task: task, success: false, err: replaceResult.Err}
+		return failWith(fmt.Sprintf("绑定失败: %v", replaceResult.Err), replaceResult.Err)
 	}
 
 	if verbose {
 		syncPrintf("  ✓ 视频 %d 成功 (%s)\n", task.index, task.source)
 	}
 	return videoResult{task: task, success: true}
+}
+
+// replaceFailedVideoBlock 将上传失败的视频 File 块替换为可见的占位 Text 块，
+// 避免阶段 1 创建的空 File 块在文档中变成孤儿（用户看不到任何内容）。
+// 由于飞书 PatchBlock 不支持跨类型变更，这里采用"删除 + 同位置插入 Text"的策略，
+// 模式与 phase3HandleFallbacks 一致。占位失败仅记日志，不让整体导入崩溃。
+func replaceFailedVideoBlock(documentID string, task videoTask, fileName, reason, userAccessToken string) {
+	placeholder := fmt.Sprintf("[视频上传失败：%s (%s)]", fileName, reason)
+
+	// 1. 在文档顶层子块中找到该 File 块的索引
+	children, err := client.GetAllBlockChildren(documentID, documentID, userAccessToken)
+	if err != nil {
+		syncPrintf("  ⚠ 视频 %d 占位块创建失败（无法获取子块列表）: %v\n", task.index, err)
+		return
+	}
+	idx := -1
+	for i, child := range children {
+		if child.BlockId != nil && *child.BlockId == task.fileBlockID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		syncPrintf("  ⚠ 视频 %d 占位块创建跳过（File 块未在顶层找到，可能位于嵌套容器内）\n", task.index)
+		return
+	}
+
+	// 2. 删除空 File 块
+	if _, err := client.DeleteBlocks(documentID, documentID, idx, idx+1, userAccessToken); err != nil {
+		syncPrintf("  ⚠ 视频 %d 占位块创建失败（删除原 File 块失败）: %v\n", task.index, err)
+		return
+	}
+
+	// 3. 在原位置插入 Text 占位块
+	textBlockType := 2 // Text block
+	textBlock := &larkdocx.Block{
+		BlockType: &textBlockType,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{
+				{TextRun: &larkdocx.TextRun{Content: &placeholder}},
+			},
+		},
+	}
+	if _, _, err := client.CreateBlock(documentID, documentID, []*larkdocx.Block{textBlock}, idx, userAccessToken); err != nil {
+		syncPrintf("  ⚠ 视频 %d 占位块创建失败（插入 Text 块失败）: %v\n", task.index, err)
+		return
+	}
 }
 
 func validateWorkerCount(flagName string, value int) error {
