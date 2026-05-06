@@ -18,6 +18,7 @@ var authCmd = &cobra.Command{
   feishu-cli auth login --json                     # AI Agent 推荐：JSON 事件流输出
   feishu-cli auth check --scope "search:docs:read" # 检查当前 token 是否包含所需 scope
   feishu-cli auth status --verify -o json          # 查看并在线校验授权状态
+  feishu-cli auth refresh                          # 强制刷新 access_token
   feishu-cli auth logout                           # 退出登录`,
 }
 

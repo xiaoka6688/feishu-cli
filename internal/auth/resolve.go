@@ -14,18 +14,27 @@ func logf(format string, a ...any) {
 //
 // 优先级:
 //  1. flagValue（--user-access-token 参数）
-//  2. FEISHU_USER_ACCESS_TOKEN 环境变量
+//     - 若 flagValue 等于 token.json 中已过期的 access_token 且 refresh_token 仍有效，
+//       自动刷新并返回新 access_token（写回 token.json）。常见场景：脚本从 token.json
+//       读取 access_token 后传入 --user-access-token，本质是延伸本机身份。
+//  2. FEISHU_USER_ACCESS_TOKEN 环境变量（同样支持本机身份延伸时的自动刷新）
 //  3. token.json（access_token 有效直接返回；过期则用 refresh_token 刷新）
 //  4. configValue（config.yaml 静态配置）
 //  5. 全部为空 → 返回错误
 func ResolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL string) (string, error) {
 	// 1. 命令行参数
 	if flagValue != "" {
+		if refreshed, ok := refreshIfStaleLocalToken(flagValue, appID, appSecret, baseURL); ok {
+			return refreshed, nil
+		}
 		return flagValue, nil
 	}
 
 	// 2. 环境变量
 	if envToken := os.Getenv("FEISHU_USER_ACCESS_TOKEN"); envToken != "" {
+		if refreshed, ok := refreshIfStaleLocalToken(envToken, appID, appSecret, baseURL); ok {
+			return refreshed, nil
+		}
 		return envToken, nil
 	}
 
@@ -74,4 +83,77 @@ func ResolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL st
 		"  2. 命令行参数: --user-access-token <token>\n" +
 		"  3. 环境变量: export FEISHU_USER_ACCESS_TOKEN=<token>\n" +
 		"  4. 配置文件: user_access_token: <token>")
+}
+
+// refreshIfStaleLocalToken 当显式传入的 token 等于 token.json 里已过期的 access_token 时，
+// 触发自动刷新并写回 token.json。这是为了支持「脚本从 token.json 读 access_token 后传 flag」
+// 这种常见用法——既保留显式传入 token 的契约，又解决了过期场景。
+//
+// 返回值:
+//   - (newToken, true): 已成功刷新并保存
+//   - ("", false): 不匹配本地 token，或不需要刷新，调用方应使用原始 token
+func refreshIfStaleLocalToken(explicitToken, appID, appSecret, baseURL string) (string, bool) {
+	local, err := LoadToken()
+	if err != nil || local == nil {
+		return "", false
+	}
+	// 必须确认 explicitToken 就是 token.json 的 access_token，否则不能擅自 refresh
+	if local.AccessToken != explicitToken {
+		return "", false
+	}
+	// 已经有效，不需要刷新
+	if local.IsAccessTokenValid() {
+		return "", false
+	}
+	// access 过期但 refresh 失效，无能为力
+	if !local.IsRefreshTokenValid() {
+		return "", false
+	}
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+	logf("[自动刷新] 显式传入的 access_token 已过期且匹配本地 token.json，正在刷新...")
+	newToken, refreshErr := RefreshAccessToken(local, appID, appSecret, baseURL)
+	if refreshErr != nil {
+		logf("[自动刷新] 刷新失败: %v", refreshErr)
+		return "", false
+	}
+	if saveErr := SaveToken(newToken); saveErr != nil {
+		logf("[自动刷新] Token 已刷新但保存失败: %v", saveErr)
+	} else {
+		logf("[自动刷新] 刷新成功，新 Token 有效期至 %s", newToken.ExpiresAt.Format("2006-01-02 15:04:05"))
+	}
+	return newToken.AccessToken, true
+}
+
+// ForceRefreshLocalToken 强制刷新 token.json 中的 access_token，
+// 即使当前 access_token 仍然有效。由 `auth refresh` 子命令调用。
+//
+// 失败原因可能是: token.json 不存在、refresh_token 已过期、网络/服务端错误。
+func ForceRefreshLocalToken(appID, appSecret, baseURL string) (*TokenStore, error) {
+	local, err := LoadToken()
+	if err != nil {
+		return nil, fmt.Errorf("读取 token.json 失败: %w", err)
+	}
+	if local == nil {
+		return nil, fmt.Errorf("未登录（token.json 不存在），请先 `feishu-cli auth login`")
+	}
+	if local.RefreshToken == "" {
+		return nil, fmt.Errorf("token.json 中缺少 refresh_token，请重新 `feishu-cli auth login`")
+	}
+	if !local.IsRefreshTokenValid() {
+		return nil, fmt.Errorf("refresh_token 已过期（%s），请重新 `feishu-cli auth login`",
+			local.RefreshExpiresAt.Format("2006-01-02 15:04:05"))
+	}
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+	newToken, err := RefreshAccessToken(local, appID, appSecret, baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := SaveToken(newToken); err != nil {
+		return nil, fmt.Errorf("刷新成功但写入 token.json 失败: %w", err)
+	}
+	return newToken, nil
 }
