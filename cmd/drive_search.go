@@ -97,27 +97,56 @@ folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序�
 			return nil
 		}
 		for i, it := range result.Items {
-			title, _ := it["title"].(string)
-			docsType, _ := it["docs_type"].(string)
-			url, _ := it["url"].(string)
-			ownerID, _ := it["owner_id"].(string)
+			title := stripSearchHighlight(getString(it, "title_highlighted"))
+			if title == "" {
+				title = getString(it, "title")
+			}
+			meta, _ := it["result_meta"].(map[string]any)
+			entityType := getString(it, "entity_type")
+			docsType := getString(meta, "doc_types")
+			if docsType == "" {
+				docsType = entityType
+			}
+			url := getString(meta, "url")
+			ownerName := getString(meta, "owner_name")
+			ownerID := getString(meta, "owner_id")
+			token := getString(meta, "token")
+
 			fmt.Printf("[%d] %s\n", i+1, title)
 			if docsType != "" {
 				fmt.Printf("    类型: %s\n", docsType)
 			}
 			if url != "" {
 				fmt.Printf("    链接: %s\n", url)
+			} else if token != "" {
+				fmt.Printf("    token: %s\n", token)
 			}
-			if ownerID != "" {
-				fmt.Printf("    所有者: %s\n", ownerID)
+			if ownerName != "" || ownerID != "" {
+				fmt.Printf("    所有者: %s (%s)\n", ownerName, ownerID)
 			}
 			fmt.Println()
 		}
-		if result.PageToken != "" {
-			fmt.Printf("下一页 page_token: %s\n", result.PageToken)
+		if result.HasMore && result.PageToken != "" {
+			fmt.Printf("下一页 --page-token <token>（见 -o json 输出的 page_token 字段）\n")
 		}
 		return nil
 	},
+}
+
+// stripSearchHighlight 去掉 v2 搜索响应里 title_highlighted / summary_highlighted 中的 <h> 标记。
+func stripSearchHighlight(s string) string {
+	s = strings.ReplaceAll(s, "<h>", "")
+	s = strings.ReplaceAll(s, "</h>", "")
+	return s
+}
+
+// getString 安全地从 map 取 string 字段，nil/缺失/类型错都返回 ""。
+func getString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	v, _ := m[key].(string)
+	return v
 }
 
 // splitAndTrimNonEmpty 与 splitAndTrim 一致，但空字符串直接返回 nil（避免空 CSV 注入空数组）。

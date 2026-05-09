@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larksearch "github.com/larksuite/oapi-sdk-go/v3/service/search/v2"
@@ -320,15 +321,20 @@ type DriveSearchResult struct {
 
 // DriveSearchV2 调用 /open-apis/search/v2/doc_wiki/search。
 // 需要 User Access Token + scope search:docs:read。
+//
+// v2 端点的真实 body 是「doc_filter / wiki_filter 双 filter 并列」结构：
+//   - 普通搜索时两边都填同样的 filter，让 backend 同时搜云盘 + 知识库
+//   - --folder-tokens 只对 doc_filter 加 folder_tokens（限定云盘文件夹）
+//   - --space-ids 只对 wiki_filter 加 space_ids（限定知识库 space）
+//   - sort_type 必须全大写枚举（DEFAULT 写成 DEFAULT_TYPE）
 func DriveSearchV2(opts DriveSearchOptions, userAccessToken string) (*DriveSearchResult, error) {
 	c, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
 
-	body := map[string]interface{}{}
-	if opts.Query != "" {
-		body["query"] = opts.Query
+	body := map[string]interface{}{
+		"query": opts.Query,
 	}
 	if opts.PageToken != "" {
 		body["page_token"] = opts.PageToken
@@ -337,39 +343,59 @@ func DriveSearchV2(opts DriveSearchOptions, userAccessToken string) (*DriveSearc
 	if pageSize <= 0 {
 		pageSize = 15
 	}
+	if pageSize > 20 {
+		pageSize = 20
+	}
 	body["page_size"] = pageSize
 
-	// 嵌套 filter 对象（按 v2 协议）
-	filter := map[string]interface{}{}
+	// 共享 filter（除 folder_tokens / space_ids 外的字段两边都加）
+	shared := map[string]interface{}{}
 	if len(opts.CreatorIDs) > 0 {
-		filter["creator_ids"] = opts.CreatorIDs
-	}
-	if len(opts.FolderTokens) > 0 {
-		filter["folder_tokens"] = opts.FolderTokens
-	}
-	if len(opts.SpaceIDs) > 0 {
-		filter["space_ids"] = opts.SpaceIDs
+		shared["creator_ids"] = opts.CreatorIDs
 	}
 	if len(opts.ChatIDs) > 0 {
-		filter["chat_ids"] = opts.ChatIDs
+		shared["chat_ids"] = opts.ChatIDs
 	}
 	if len(opts.SharerIDs) > 0 {
-		filter["sharer_ids"] = opts.SharerIDs
+		shared["sharer_ids"] = opts.SharerIDs
 	}
 	if len(opts.DocTypes) > 0 {
-		filter["doc_types"] = opts.DocTypes
+		shared["doc_types"] = opts.DocTypes
 	}
 	if opts.OnlyTitle {
-		filter["only_title"] = true
+		shared["only_title"] = true
 	}
 	if opts.OnlyComment {
-		filter["only_comment"] = true
-	}
-	if len(filter) > 0 {
-		body["filter"] = filter
+		shared["only_comment"] = true
 	}
 	if opts.Sort != "" {
-		body["sort"] = opts.Sort
+		sortType := strings.ToUpper(opts.Sort)
+		if sortType == "DEFAULT" {
+			sortType = "DEFAULT_TYPE"
+		}
+		shared["sort_type"] = sortType
+	}
+
+	cloneFilter := func() map[string]interface{} {
+		out := make(map[string]interface{}, len(shared))
+		for k, v := range shared {
+			out[k] = v
+		}
+		return out
+	}
+
+	switch {
+	case len(opts.FolderTokens) > 0:
+		docFilter := cloneFilter()
+		docFilter["folder_tokens"] = opts.FolderTokens
+		body["doc_filter"] = docFilter
+	case len(opts.SpaceIDs) > 0:
+		wikiFilter := cloneFilter()
+		wikiFilter["space_ids"] = opts.SpaceIDs
+		body["wiki_filter"] = wikiFilter
+	default:
+		body["doc_filter"] = cloneFilter()
+		body["wiki_filter"] = cloneFilter()
 	}
 
 	resp, err := c.Post(Context(), "/open-apis/search/v2/doc_wiki/search", body,
