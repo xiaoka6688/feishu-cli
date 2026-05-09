@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
+	"sync"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -47,6 +47,10 @@ var driveStatusCmd = &cobra.Command{
 		folderToken, _ := cmd.Flags().GetString("folder-token")
 		localDir, _ := cmd.Flags().GetString("local-dir")
 		output, _ := cmd.Flags().GetString("output")
+		workers, _ := cmd.Flags().GetInt("workers")
+		if workers < 1 {
+			workers = 1
+		}
 		if folderToken == "" {
 			return fmt.Errorf("--folder-token 必填")
 		}
@@ -66,13 +70,10 @@ var driveStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		localHashes := make(map[string]string, len(localFiles))
-		for rel, abs := range localFiles {
-			h, hErr := client.HashLocalFile(abs)
-			if hErr != nil {
-				return fmt.Errorf("计算本地哈希失败 (%s): %w", rel, hErr)
-			}
-			localHashes[rel] = h
+		// 本地 hash CPU bound，并发计算
+		localHashes, err := concurrentHashLocal(localFiles, workers)
+		if err != nil {
+			return err
 		}
 
 		fmt.Fprintf(cmd.ErrOrStderr(), "列举云盘文件夹: %s\n", folderToken)
@@ -102,6 +103,20 @@ var driveStatusCmd = &cobra.Command{
 		}
 		var newLocal, newRemote, modified, unchanged []entry
 
+		// 先收集需要远端 hash 的路径（双方都有的），并发拉取
+		var bothPaths []string
+		for _, rel := range sortedPaths {
+			_, hasLocal := localHashes[rel]
+			_, hasRemote := remoteFiles[rel]
+			if hasLocal && hasRemote {
+				bothPaths = append(bothPaths, rel)
+			}
+		}
+		remoteHashes, err := concurrentHashRemote(bothPaths, remoteFiles, userToken, workers)
+		if err != nil {
+			return err
+		}
+
 		for _, rel := range sortedPaths {
 			localHash, hasLocal := localHashes[rel]
 			remoteToken, hasRemote := remoteFiles[rel]
@@ -111,11 +126,7 @@ var driveStatusCmd = &cobra.Command{
 			case !hasLocal && hasRemote:
 				newRemote = append(newRemote, entry{RelPath: rel, FileToken: remoteToken})
 			default:
-				remoteHash, hErr := client.HashRemoteFile(remoteToken, userToken)
-				if hErr != nil {
-					return fmt.Errorf("计算远端哈希失败 (%s): %w", rel, hErr)
-				}
-				if localHash == remoteHash {
+				if localHash == remoteHashes[rel] {
 					unchanged = append(unchanged, entry{RelPath: rel, FileToken: remoteToken})
 				} else {
 					modified = append(modified, entry{RelPath: rel, FileToken: remoteToken})
@@ -148,7 +159,6 @@ var driveStatusCmd = &cobra.Command{
 		printBucket("仅远端 new_remote", newRemote)
 		printBucket("内容不同 modified", modified)
 		fmt.Printf("[内容一致 unchanged] %d 项\n", len(unchanged))
-		_ = filepath.ToSlash // keep import
 		return nil
 	},
 }
@@ -161,10 +171,78 @@ func emptyOrSlice[T any](s []T) []T {
 	return s
 }
 
+// concurrentHashLocal 并发计算本地文件 SHA-256，限并发 workers。
+func concurrentHashLocal(files map[string]string, workers int) (map[string]string, error) {
+	out := make(map[string]string, len(files))
+	var mu sync.Mutex
+	var firstErr error
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, workers)
+	for rel, abs := range files {
+		rel, abs := rel, abs
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			h, err := client.HashLocalFile(abs)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("计算本地哈希失败 (%s): %w", rel, err)
+				}
+				return
+			}
+			out[rel] = h
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return out, nil
+}
+
+// concurrentHashRemote 并发拉取远端文件 SHA-256，限并发 workers。
+func concurrentHashRemote(rels []string, remoteFiles map[string]string, userToken string, workers int) (map[string]string, error) {
+	out := make(map[string]string, len(rels))
+	var mu sync.Mutex
+	var firstErr error
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, workers)
+	for _, rel := range rels {
+		rel := rel
+		token := remoteFiles[rel]
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			h, err := client.HashRemoteFile(token, userToken)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("计算远端哈希失败 (%s): %w", rel, err)
+				}
+				return
+			}
+			out[rel] = h
+		}()
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return out, nil
+}
+
 func init() {
 	driveCmd.AddCommand(driveStatusCmd)
 	driveStatusCmd.Flags().String("folder-token", "", "云盘根文件夹 token（必填）")
 	driveStatusCmd.Flags().String("local-dir", "", "本地根目录（必填，必须在 cwd 子树内）")
+	driveStatusCmd.Flags().Int("workers", 4, "并发 hash worker 数（本地+远端）")
 	driveStatusCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	driveStatusCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(driveStatusCmd, "folder-token")

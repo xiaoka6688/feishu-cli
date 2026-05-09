@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
+	"sync/atomic"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -56,6 +58,10 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 		deleteLocal, _ := cmd.Flags().GetBool("delete-local")
 		yes, _ := cmd.Flags().GetBool("yes")
 		output, _ := cmd.Flags().GetString("output")
+		workers, _ := cmd.Flags().GetInt("workers")
+		if workers < 1 {
+			workers = 1
+		}
 
 		if folderToken == "" {
 			return fmt.Errorf("--folder-token 必填")
@@ -98,8 +104,6 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 			Action    string `json:"action"` // downloaded / skipped / failed / deleted_local / delete_failed
 			Error     string `json:"error,omitempty"`
 		}
-		var items []item
-		var downloaded, skipped, failed, deletedLocal, downloadFailed int
 
 		// 稳定顺序
 		sortedRels := make([]string, 0, len(remoteFiles))
@@ -108,45 +112,66 @@ type=folder/docx/sheet/bitable/mindnote/slides/shortcut 不会作为可下载条
 		}
 		sort.Strings(sortedRels)
 
-		for _, rel := range sortedRels {
+		// 并发下载：每个 rel 写入 results[idx]，避免锁；计数器用 atomic
+		results := make([]item, len(sortedRels))
+		var downloadedCnt, skippedCnt, downloadFailedCnt int64
+		sem := make(chan struct{}, workers)
+		var wg sync.WaitGroup
+		for i, rel := range sortedRels {
+			i, rel := i, rel
 			token := remoteFiles[rel]
 			target := filepath.Join(safeRoot, filepath.FromSlash(rel))
 
 			if info, statErr := os.Stat(target); statErr == nil {
 				if info.IsDir() {
-					items = append(items, item{
+					results[i] = item{
 						RelPath:   rel,
 						FileToken: token,
 						Action:    "failed",
 						Error:     "本地同路径是目录，远端是文件",
-					})
-					failed++
-					downloadFailed++
+					}
+					atomic.AddInt64(&downloadFailedCnt, 1)
 					continue
 				}
 				if ifExists == driveMirrorIfExistsSkip {
-					items = append(items, item{RelPath: rel, FileToken: token, Action: "skipped"})
-					skipped++
+					results[i] = item{RelPath: rel, FileToken: token, Action: "skipped"}
+					atomic.AddInt64(&skippedCnt, 1)
 					continue
 				}
 			}
 
-			// 确保父目录存在
-			if mkErr := os.MkdirAll(filepath.Dir(target), 0755); mkErr != nil {
-				items = append(items, item{RelPath: rel, FileToken: token, Action: "failed", Error: mkErr.Error()})
-				failed++
-				downloadFailed++
-				continue
-			}
-			if dlErr := client.DownloadFileWithToken(token, target, userToken); dlErr != nil {
-				items = append(items, item{RelPath: rel, FileToken: token, Action: "failed", Error: dlErr.Error()})
-				failed++
-				downloadFailed++
-				continue
-			}
-			items = append(items, item{RelPath: rel, FileToken: token, Action: "downloaded"})
-			downloaded++
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				if mkErr := os.MkdirAll(filepath.Dir(target), 0755); mkErr != nil {
+					results[i] = item{RelPath: rel, FileToken: token, Action: "failed", Error: mkErr.Error()}
+					atomic.AddInt64(&downloadFailedCnt, 1)
+					return
+				}
+				if dlErr := client.DownloadFileWithToken(token, target, userToken); dlErr != nil {
+					results[i] = item{RelPath: rel, FileToken: token, Action: "failed", Error: dlErr.Error()}
+					atomic.AddInt64(&downloadFailedCnt, 1)
+					return
+				}
+				results[i] = item{RelPath: rel, FileToken: token, Action: "downloaded"}
+				atomic.AddInt64(&downloadedCnt, 1)
+			}()
 		}
+		wg.Wait()
+
+		items := make([]item, 0, len(results))
+		for _, it := range results {
+			if it.Action != "" {
+				items = append(items, it)
+			}
+		}
+		downloaded := int(downloadedCnt)
+		skipped := int(skippedCnt)
+		downloadFailed := int(downloadFailedCnt)
+		failed := downloadFailed
+		deletedLocal := 0
 
 		// --delete-local 在下载阶段无失败时才执行，避免半同步状态
 		if deleteLocal && downloadFailed == 0 {
@@ -218,6 +243,7 @@ func init() {
 	drivePullCmd.Flags().String("if-exists", driveMirrorIfExistsOverwrite, "overwrite / skip")
 	drivePullCmd.Flags().Bool("delete-local", false, "清理本地不存在于远端的文件（高危，需 --yes）")
 	drivePullCmd.Flags().Bool("yes", false, "与 --delete-local 配套确认删除")
+	drivePullCmd.Flags().Int("workers", 4, "并发下载 worker 数")
 	drivePullCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	drivePullCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 	mustMarkFlagRequired(drivePullCmd, "folder-token")

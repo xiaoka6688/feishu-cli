@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -254,10 +254,11 @@ docx/sheet/bitable/mindnote/slides/shortcut 等在线文档不会被作为孤儿
 
 // pushParentRel 取 rel_path（用 / 分隔）的父目录 rel_path。"" 表示根。
 func pushParentRel(rel string) string {
-	if i := strings.LastIndex(rel, "/"); i >= 0 {
-		return rel[:i]
+	d := path.Dir(rel)
+	if d == "." {
+		return ""
 	}
-	return ""
+	return d
 }
 
 // ensureRemoteFolder 保证 relDir 在远端存在，返回其 folder_token。
@@ -269,16 +270,11 @@ func ensureRemoteFolder(rootToken, relDir string, folderCache map[string]string,
 	if tok, ok := folderCache[relDir]; ok {
 		return tok, nil
 	}
-	parent := pushParentRel(relDir)
-	parentToken, err := ensureRemoteFolder(rootToken, parent, folderCache, userToken)
+	parentToken, err := ensureRemoteFolder(rootToken, pushParentRel(relDir), folderCache, userToken)
 	if err != nil {
 		return "", err
 	}
-	name := relDir
-	if i := strings.LastIndex(relDir, "/"); i >= 0 {
-		name = relDir[i+1:]
-	}
-	tok, _, err := client.CreateFolder(name, parentToken, userToken)
+	tok, _, err := client.CreateFolder(path.Base(relDir), parentToken, userToken)
 	if err != nil {
 		return "", err
 	}

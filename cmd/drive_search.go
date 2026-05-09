@@ -71,11 +71,11 @@ folder-tokens、space-ids、creator-ids、sharer-ids、only-title、sort 排序�
 			Query:        query,
 			PageToken:    pageToken,
 			PageSize:     pageSize,
-			CreatorIDs:   splitAndTrimNonEmpty(creators),
-			FolderTokens: splitAndTrimNonEmpty(folders),
-			SpaceIDs:     splitAndTrimNonEmpty(spaces),
-			ChatIDs:      splitAndTrimNonEmpty(chats),
-			SharerIDs:    splitAndTrimNonEmpty(sharers),
+			CreatorIDs:   splitAndTrim(creators),
+			FolderTokens: splitAndTrim(folders),
+			SpaceIDs:     splitAndTrim(spaces),
+			ChatIDs:      splitAndTrim(chats),
+			SharerIDs:    splitAndTrim(sharers),
 			DocTypes:     normalizeDocTypes(docTypes),
 			OnlyTitle:    onlyTitle,
 			OnlyComment:  onlyComment,
@@ -149,17 +149,9 @@ func getString(m map[string]any, key string) string {
 	return v
 }
 
-// splitAndTrimNonEmpty 与 splitAndTrim 一致，但空字符串直接返回 nil（避免空 CSV 注入空数组）。
-func splitAndTrimNonEmpty(s string) []string {
-	if strings.TrimSpace(s) == "" {
-		return nil
-	}
-	return splitAndTrim(s)
-}
-
 // normalizeDocTypes 把 doc-types 列表转大写（v2 端点要求大写枚举值）。
 func normalizeDocTypes(s string) []string {
-	parts := splitAndTrimNonEmpty(s)
+	parts := splitAndTrim(s)
 	for i, p := range parts {
 		parts[i] = strings.ToUpper(p)
 	}

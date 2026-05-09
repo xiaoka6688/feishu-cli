@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -1215,17 +1216,35 @@ func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userA
 	return nil
 }
 
-// BatchGetMessages 批量获取消息详情（逐条调用 GetMessage）
+// BatchGetMessages 批量获取消息详情，并发调用 GetMessage（限 5 并发，保持入参顺序）。
 //
 // cardContentType 透传给每次 GetMessage 调用；空字符串则维持原渲染版返回。
 func BatchGetMessages(messageIDs []string, userAccessToken, cardContentType string) ([]*larkim.Message, error) {
-	var results []*larkim.Message
-	for _, id := range messageIDs {
-		msgResult, err := GetMessage(id, userAccessToken, cardContentType)
+	const batchGetMessagesConcurrency = 5
+	results := make([]*larkim.Message, len(messageIDs))
+	errs := make([]error, len(messageIDs))
+	sem := make(chan struct{}, batchGetMessagesConcurrency)
+	var wg sync.WaitGroup
+	for i, id := range messageIDs {
+		i, id := i, id
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			msgResult, err := GetMessage(id, userAccessToken, cardContentType)
+			if err != nil {
+				errs[i] = fmt.Errorf("获取消息 %s 失败: %w", id, err)
+				return
+			}
+			results[i] = msgResult.Message
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
 		if err != nil {
-			return nil, fmt.Errorf("获取消息 %s 失败: %w", id, err)
+			return nil, err
 		}
-		results = append(results, msgResult.Message)
 	}
 	return results, nil
 }

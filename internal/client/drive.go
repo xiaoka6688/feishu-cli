@@ -420,23 +420,25 @@ func listFolderRecursiveInner(folderToken, relBase, userAccessToken string, out 
 	return nil
 }
 
-// HashRemoteFile 下载远端文件并计算 SHA-256。仅用于 status 比对，不落地到磁盘。
+// HashRemoteFile 流式下载远端文件并计算 SHA-256。
+// 仅用于 status 比对，不落地到磁盘；流式读取使内存峰值保持在 O(64KB)，避免大文件 OOM。
 func HashRemoteFile(fileToken, userAccessToken string) (string, error) {
 	c, err := GetClient()
 	if err != nil {
 		return "", err
 	}
-	tokenType, opts := resolveTokenOpts(userAccessToken)
-	apiPath := fmt.Sprintf("/open-apis/drive/v1/files/%s/download", fileToken)
-	resp, err := c.Get(Context(), apiPath, nil, tokenType, opts...)
+	req := larkdrive.NewDownloadFileReqBuilder().FileToken(fileToken).Build()
+	resp, err := c.Drive.File.Download(ContextWithTimeout(downloadTimeout), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return "", fmt.Errorf("下载远端文件以计算哈希失败 (token=%s): %w", fileToken, err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("下载远端文件以计算哈希失败 (token=%s): HTTP %d", fileToken, resp.StatusCode)
+	if !resp.Success() {
+		return "", fmt.Errorf("下载远端文件以计算哈希失败 (token=%s): code=%d, msg=%s", fileToken, resp.Code, resp.Msg)
 	}
 	h := sha256.New()
-	h.Write(resp.RawBody)
+	if _, err := io.Copy(h, io.LimitReader(resp.File, maxDownloadSize)); err != nil {
+		return "", fmt.Errorf("读取远端文件流以计算哈希失败 (token=%s): %w", fileToken, err)
+	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
