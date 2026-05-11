@@ -15,6 +15,8 @@ feishu-cli 使用飞书 OpenAPI 原生 JSON 格式，所有节点通过绝对坐
 | 平行四边形 | `composite_shape` | `parallelogram` | 输入/输出 |
 | 纯文本 | `composite_shape` | 任意 + 无边框无填充 | 标签/标题 |
 | 连接线 | `connector` | -- | 节点间关系 |
+| 文本节点 | `text_shape` | -- | 独立文字（推荐用于纯标签） |
+| **矢量图形** | **`svg`** | **--** | **任意 SVG 代码作为可编辑矢量节点（飞轮/鱼骨/路线图等 AI 自由作图首选）** |
 
 ---
 
@@ -143,6 +145,98 @@ feishu-cli 使用飞书 OpenAPI 原生 JSON 格式，所有节点通过绝对坐
 | `arrow_style` | `none`, `triangle_arrow` | 箭头样式 |
 | `position` | `{"x": 0-1, "y": 0-1}` | 节点边缘上的连接点（归一化坐标） |
 | `snap_to` | `left`, `right`, `top`, `bottom` | 吸附方向 |
+
+---
+
+## svg（矢量节点）
+
+整段 SVG 作为单个画板节点，飞书画板解析器会把内部元素渲染为可编辑矢量图形。**适合 AI 自由作图**（飞轮 / 鱼骨 / 路线图 / 仪表盘 / 户型图 / 海报 / 信息周期表等），完全绕开 Mermaid/PlantUML 的语法限制。
+
+### 完整属性
+
+```json
+{
+  "type": "svg",
+  "x": 100,
+  "y": 100,
+  "width": 245,
+  "height": 245,
+  "angle": 0,
+  "z_index": 10,
+  "svg": {
+    "key": "",
+    "svg_code": "<svg viewBox=\"0 0 245 245\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 120 0 A 120 120 0 0 1 240 120 L 180 120 A 60 60 0 0 0 120 60 Z\" fill=\"#8569CB\" opacity=\"0.85\"/></svg>",
+    "type": 0
+  },
+  "style": {
+    "border_color": "#4e83fd",
+    "border_color_type": 0,
+    "border_opacity": 100,
+    "border_style": "none",
+    "border_width": "narrow",
+    "fill_color_type": 0,
+    "fill_opacity": 100,
+    "theme_border_color_code": -1,
+    "theme_fill_color_code": -1
+  }
+}
+```
+
+### 安全字段白名单
+
+| 层级 | 允许的字段 |
+|------|-----------|
+| 顶层 | `type`, `x`, `y`, `width`, `height`, `angle`, `z_index`, `svg`, `style` |
+| `svg` | `key`（空字符串占位）, `svg_code`（必填）, `type`（默认 0） |
+| `style` | 同 composite_shape，但 `fill_color_type=0` + `fill_opacity=100` 表示走 SVG 自带填色 |
+
+### 推荐 SVG 元素
+
+| 元素 | 用途 | 支持度 |
+|------|------|--------|
+| `<rect>` | 矩形、卡片、背景 | ✓ |
+| `<circle>` / `<ellipse>` | 圆环、节点 | ✓ |
+| `<path>` | 任意路径（扇形 / 曲线 / 折线） | ✓ |
+| `<polygon>` / `<polyline>` | 多边形、连线 | ✓ |
+| `<text>` | 文字（可设 `font-size` `fill` `text-anchor`） | ✓ |
+| `<line>` | 直线 | ✓ |
+| `<g>` 嵌套 | 分组 | ✓ |
+| `<foreignObject>` | HTML 嵌入 | ✗（不推荐） |
+| `<image href>` | 外链图片 | ⚠ 需画板内已存的 token，建议改用 `board upload-image` |
+
+### 极坐标布局（AI 自由作图常用）
+
+均匀分布 N 个节点在圆周上：
+
+```
+for i in 0..N:
+    θ = 2π * i / N
+    x = cx + r * cos(θ)
+    y = cy + r * sin(θ)
+```
+
+### 节点密度建议
+
+| 节点数 | 状态 |
+|--------|------|
+| ≤ 100 | 流畅 |
+| 100-300 | 正常 |
+| 300-500 | 编辑略卡 |
+| 500-600 | 可承受上限（参考元素周期表 659 节点实测） |
+| > 700 | 不推荐 |
+
+### 一键导入
+
+```bash
+# CLI 命令（自动解析 viewBox 推断宽高）
+feishu-cli board svg-import <whiteboard_id> drawing.svg --x 100 --y 100
+
+# 字符串直传
+feishu-cli board svg-import <whiteboard_id> '<svg viewBox="0 0 200 200">...</svg>' --source-type content
+
+# 预览不发请求
+feishu-cli board svg-import <whiteboard_id> drawing.svg --dry-run
+```
 
 ---
 

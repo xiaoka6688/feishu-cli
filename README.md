@@ -640,12 +640,22 @@ feishu-cli tasklist list
 feishu-cli tasklist get <tasklist_guid>
 feishu-cli tasklist delete <tasklist_guid>
 
-# 画板
+# 画板（v1.25+ 新增 5 个子命令 + Mermaid 本地引擎 + Markdown ```svg fence 自动识别）
 feishu-cli board create-notes <whiteboard_id> nodes.json -o json  # 精排绘图（JSON 控制坐标、颜色、连线）
-feishu-cli board import <whiteboard_id> --source-type content -c "graph TD; A-->B" --syntax mermaid  # 导入 Mermaid
+feishu-cli board import <whiteboard_id> --source-type content -c "graph TD; A-->B" --syntax mermaid  # 服务端渲染
+feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid --engine local  # 本地引擎（whiteboard-cli 翻译，每个节点可单独编辑）
 feishu-cli board import <whiteboard_id> diagram.puml --syntax plantuml  # 导入 PlantUML
+feishu-cli board svg-import <whiteboard_id> drawing.svg            # 单 svg 节点装饰（图标/印章 < 2KB）
+feishu-cli board clone <source_id> <target_id> --batch-size 10    # 克隆画板（含 connector ID 重映射 + 分批节流）
+feishu-cli board upload-image <whiteboard_id> photo.png           # 上传本地图片为 image 节点（自动推断像素尺寸）
+feishu-cli board lint <whiteboard_id>                              # 几何质检（重叠/字号一致性/容量/综合评分）
+feishu-cli board export-code <whiteboard_id> --merge --output design.svg  # 反向导出 SVG（按 z_index 排序）
+feishu-cli board update <whiteboard_id> nodes.json --overwrite --snapshot old.json  # 覆盖更新+快照备份
 feishu-cli board nodes <whiteboard_id>                            # 获取画板所有节点
 feishu-cli board image <whiteboard_id> output.png                 # 下载画板截图
+# ⭐ AI 自由作图（飞轮/鱼骨/Dashboard/插画/周期表/赛博朋克等）：用 skill 的一键脚本，每个矢量元素都可单独点击编辑
+python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_id>
+#   内置 5 步管道：whiteboard-cli 翻译 → 修 z_index → 修剪 viewBox 溢出 → 分批 create-notes → 验证
 
 # 评论
 feishu-cli comment list <file_token> --type docx

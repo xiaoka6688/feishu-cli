@@ -38,8 +38,21 @@ var boardUpdateCmd = &cobra.Command{
 		useStdin, _ := cmd.Flags().GetBool("stdin")
 		overwrite, _ := cmd.Flags().GetBool("overwrite")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		snapshotPath, _ := cmd.Flags().GetString("snapshot")
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
+
+		// --snapshot：在执行 overwrite 之前先把旧节点导出到本地（增强原子性）
+		if overwrite && snapshotPath != "" && !dryRun {
+			raw, err := client.GetBoardNodes(whiteboardID, userAccessToken)
+			if err != nil {
+				return fmt.Errorf("快照导出失败: %w", err)
+			}
+			if err := os.WriteFile(snapshotPath, raw, 0644); err != nil {
+				return fmt.Errorf("写入快照文件失败: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "已导出旧画板快照 → %s（覆盖失败时可手动恢复）\n", snapshotPath)
+		}
 
 		// 1. 读取节点 JSON（从文件或 stdin）
 		var nodesJSON string
@@ -199,6 +212,7 @@ func init() {
 	boardUpdateCmd.Flags().Bool("stdin", false, "从标准输入读取节点 JSON")
 	boardUpdateCmd.Flags().Bool("overwrite", false, "覆盖模式（先写后删）")
 	boardUpdateCmd.Flags().Bool("dry-run", false, "仅预览，不实际执行")
+	boardUpdateCmd.Flags().String("snapshot", "", "执行 --overwrite 前把旧节点导出到此路径（用于失败回滚）")
 	boardUpdateCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	boardUpdateCmd.Flags().String("user-access-token", "", "User Access Token")
 }

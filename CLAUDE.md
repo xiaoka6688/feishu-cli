@@ -143,7 +143,18 @@ feishu-cli drive {upload|download|export|import|move|add-comment|task-result} ..
 feishu-cli vc {search|notes|recording} ...
 feishu-cli minutes {get|download} --minute-tokens ...
 
-# 其他模块：doc / msg / sheet / calendar / task / tasklist / chat / wiki / file / perm / board / search / user / dept / comment / media
+# 画板（v1.25+ 新增能力 ⭐）
+feishu-cli board svg-import <id> drawing.svg                    # SVG 单节点装饰（< 2KB 小元素）
+feishu-cli board clone <src> <dst> --batch-size 10              # 克隆画板（含 connector ID 重映射）
+feishu-cli board upload-image <id> photo.png                    # 图片转 image 节点
+feishu-cli board lint <id>                                       # 几何质检 + 综合评分
+feishu-cli board export-code <id> --merge --output design.svg   # 反向导出 SVG
+feishu-cli board import <id> diagram.mmd --syntax mermaid --engine local  # Mermaid 本地引擎（whiteboard-cli 翻译，节点可编辑）
+feishu-cli board update <id> nodes.json --overwrite --snapshot old.json    # 覆盖+快照
+# AI 自由作图首选：5 步管道（生成 SVG → whiteboard-cli 翻译 → 修 z_index → 修剪 viewBox → 分批上传）
+python3 skills/feishu-cli-board/scripts/svg_to_board.py drawing.svg <whiteboard_id>
+
+# 其他模块：doc / msg / sheet / calendar / task / tasklist / chat / wiki / file / perm / search / user / dept / comment / media
 ```
 
 完整子命令列表：`feishu-cli --help` 或 `feishu-cli <cmd> --help`。
@@ -224,7 +235,7 @@ feishu-cli minutes {get|download} --minute-tokens ...
 | `/feishu-cli-card` | 构造美观 V2.0 interactive 卡片（7 场景模板 + 30+ 组件） |
 | `/feishu-cli-chat` | 会话浏览与群聊管理 |
 | `/feishu-cli-toolkit` | 综合工具箱（表格/日历/任务/清单/文件/素材/评论/知识库/通讯录） |
-| `/feishu-cli-board` | 画板（精排绘图/Mermaid/截图/节点） |
+| `/feishu-cli-board` | 画板全能（v1.25+ 重构）：5 路径决策树（Mermaid 服务端/本地引擎/SVG → 原生节点 ⭐/SVG 单节点装饰/精排架构）+ `scripts/svg_to_board.py` 一键管道 + 4 篇 references（svg-workflow/mermaid-engines/pitfalls/examples-real） |
 | `/feishu-cli-bitable` | 多维表格全功能 |
 | `/feishu-cli-vc` | 视频会议与妙记 |
 | `/feishu-cli-auth` | OAuth 认证、Token、scope 配置 |

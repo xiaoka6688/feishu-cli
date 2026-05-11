@@ -175,16 +175,12 @@ feishu-cli doc add-board <document_id> -o json
 
 ## z_index 与 fill_opacity（渲染层级）
 
-**关键规则**：背景色块 fill_opacity 必须 <= 60（推荐 <= 25），否则完全遮挡上层元素。
+z_index 分层规则与 fill_opacity 上限详见 **`schema.md` 的 "z_index 分层规则" 段**（避免本文档与 schema.md 重复）。
 
-| z_index 范围 | 用途 | fill_opacity |
-|-------------|------|-------------|
-| 0-1 | 外层容器、背景色带 | <= 25 |
-| 2-3 | 次级色带、表头区域 | <= 60 |
-| 4-8 | 列容器（dash border） | -- |
-| 9-16 | 文本标签（表头、图例） | -- |
-| 10 | 常规形状节点 | 100（实心） |
-| 50 | 连接线 | border_opacity=100 |
+**两条关键规则提示**：
+
+- 背景色块 `fill_opacity ≤ 60`（推荐 ≤ 25），否则完全遮挡上层元素
+- whiteboard-cli 翻译 SVG 时**不输出 z_index 字段**，飞书 API 自动分配是无序的——通过 `scripts/svg_to_board.py` 5 步管道走 SVG 路径时已内置修复；手写节点 JSON 时务必显式指定 z_index（见 `pitfalls.md` 陷阱 1）
 
 ## 典型工作流
 

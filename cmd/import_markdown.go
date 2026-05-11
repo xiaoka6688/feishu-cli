@@ -35,7 +35,7 @@ func syncPrintf(format string, a ...any) {
 
 // segment 表示 Markdown 中的一个片段
 type segment struct {
-	kind    string // "markdown"、"mermaid"、"plantuml" 或 "equation"
+	kind    string // "markdown"、"mermaid"、"plantuml"、"svg" 或 "equation"
 	content string
 }
 
@@ -107,13 +107,15 @@ func parseMarkdownSegments(markdown string) []segment {
 			continue
 		}
 
-		// 不在围栏内：检查是否是图表代码块开始（恰好 3 个反引号 + mermaid/plantuml/puml）
+		// 不在围栏内：检查是否是图表代码块开始（恰好 3 个反引号 + mermaid/plantuml/puml/svg）
 		var diagramKind string
 		if backticks == 3 {
 			if strings.HasPrefix(trimmed, "```mermaid") {
 				diagramKind = "mermaid"
 			} else if strings.HasPrefix(trimmed, "```plantuml") || strings.HasPrefix(trimmed, "```puml") {
 				diagramKind = "plantuml"
+			} else if strings.HasPrefix(trimmed, "```svg") {
+				diagramKind = "svg"
 			}
 		}
 
@@ -164,15 +166,19 @@ func parseMarkdownSegments(markdown string) []segment {
 
 // diagramSyntaxLabel 返回图表语法的显示标签
 func diagramSyntaxLabel(syntax string) string {
-	if syntax == "plantuml" {
+	switch syntax {
+	case "plantuml":
 		return "PlantUML"
+	case "svg":
+		return "SVG"
+	default:
+		return "Mermaid"
 	}
-	return "Mermaid"
 }
 
-// countDiagramBlocks 统计图表代码块数量（Mermaid + PlantUML）
+// countDiagramBlocks 统计图表代码块数量（Mermaid + PlantUML + SVG）
 // 使用与 parseMarkdownSegments 相同的嵌套围栏逻辑，避免将示例代码块中的图表标记误计
-func countDiagramBlocks(markdown string) (mermaidCount, plantumlCount int) {
+func countDiagramBlocks(markdown string) (mermaidCount, plantumlCount, svgCount int) {
 	lines := strings.Split(markdown, "\n")
 	inFence := false
 	fenceBackticks := 0
@@ -194,6 +200,8 @@ func countDiagramBlocks(markdown string) (mermaidCount, plantumlCount int) {
 				mermaidCount++
 			} else if strings.HasPrefix(trimmed, "```plantuml") || strings.HasPrefix(trimmed, "```puml") {
 				plantumlCount++
+			} else if strings.HasPrefix(trimmed, "```svg") {
+				svgCount++
 			} else if trimmed != "```" {
 				// 非图表的 3 反引号代码块
 				inFence = true
@@ -279,6 +287,7 @@ type importStats struct {
 	diagramFailed   int
 	mermaidCount    int // Mermaid 图表数（用于分类统计）
 	plantumlCount   int // PlantUML 图表数（用于分类统计）
+	svgCount        int // SVG 图表数（用于分类统计）
 	tableTotal      int
 	tableSuccess    int
 	tableFailed     int
@@ -368,8 +377,8 @@ var importMarkdownCmd = &cobra.Command{
 		markdownText := string(content)
 
 		// 统计图表数量
-		mermaidCount, plantumlCount := countDiagramBlocks(markdownText)
-		diagramCount := mermaidCount + plantumlCount
+		mermaidCount, plantumlCount, svgCount := countDiagramBlocks(markdownText)
+		diagramCount := mermaidCount + plantumlCount + svgCount
 		if verbose && diagramCount > 0 {
 			var parts []string
 			if mermaidCount > 0 {
@@ -377,6 +386,9 @@ var importMarkdownCmd = &cobra.Command{
 			}
 			if plantumlCount > 0 {
 				parts = append(parts, fmt.Sprintf("%d 个 PlantUML", plantumlCount))
+			}
+			if svgCount > 0 {
+				parts = append(parts, fmt.Sprintf("%d 个 SVG", svgCount))
 			}
 			fmt.Printf("[信息] 检测到 %s 图表\n", strings.Join(parts, ", "))
 		}
@@ -414,6 +426,7 @@ var importMarkdownCmd = &cobra.Command{
 			diagramTotal:  diagramCount,
 			mermaidCount:  mermaidCount,
 			plantumlCount: plantumlCount,
+			svgCount:      svgCount,
 		}
 
 		// === 阶段 1/3: 顺序创建文档块 ===
@@ -506,6 +519,7 @@ var importMarkdownCmd = &cobra.Command{
 				"diagram_failed":   stats.diagramFailed,
 				"mermaid_count":    stats.mermaidCount,
 				"plantuml_count":   stats.plantumlCount,
+				"svg_count":        stats.svgCount,
 				"diagram_fallback": stats.fallbackSuccess,
 				"table_total":      stats.tableTotal,
 				"table_success":    stats.tableSuccess,
@@ -767,7 +781,7 @@ func phase1CreateBlocks(
 				}
 			}
 
-		} else if seg.kind == "mermaid" || seg.kind == "plantuml" {
+		} else if seg.kind == "mermaid" || seg.kind == "plantuml" || seg.kind == "svg" {
 			diagramIdx++
 			syntaxLabel := diagramSyntaxLabel(seg.kind)
 
@@ -947,9 +961,29 @@ func phase2ConcurrentProcess(
 	return failedDiagrams
 }
 
-// processDiagramTask 处理单个图表导入任务（Mermaid/PlantUML），带重试
+// processDiagramTask 处理单个图表导入任务（Mermaid/PlantUML/SVG），带重试
 func processDiagramTask(task diagramTask, maxRetries int, verbose bool, userAccessToken string) diagramResult {
 	syntaxLabel := diagramSyntaxLabel(task.syntax)
+
+	// SVG 走 create_nodes 透传，不走 plantuml endpoint
+	if task.syntax == "svg" {
+		nodeJSON, buildErr := buildSVGNodeJSON(task.content)
+		if buildErr != nil {
+			syncPrintf("  ✗ %s %d 解析失败: %v\n", syntaxLabel, task.index, buildErr)
+			return diagramResult{task: task, success: false, err: buildErr}
+		}
+		_, createErr := client.CreateBoardNodes(task.whiteboardID, nodeJSON, client.CreateBoardNotesOptions{
+			UserAccessToken: userAccessToken,
+		})
+		if createErr != nil {
+			syncPrintf("  ✗ %s %d 创建节点失败: %v\n", syntaxLabel, task.index, createErr)
+			return diagramResult{task: task, success: false, err: createErr}
+		}
+		if verbose {
+			syncPrintf("  ✓ %s %d 成功\n", syntaxLabel, task.index)
+		}
+		return diagramResult{task: task, success: true}
+	}
 
 	opts := client.ImportDiagramOptions{
 		SourceType:      "content",
