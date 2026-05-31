@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -745,6 +746,89 @@ func isDownloadFileSizeLimitError(code int, msg string, err error) bool {
 	}
 	return strings.Contains(text, "downloaded file size exceeds limit") ||
 		(strings.Contains(text, "file size") && strings.Contains(text, "exceed"))
+}
+
+// DownloadFileVersion 下载云盘文件的指定历史版本内容。
+//
+// 远端版本下载 = GET /open-apis/drive/v1/files/{file_token}/download?version=N，
+// 即同一个 file_token + version 查询参数，不会产生新 token（lark dry-run 实证）。
+// SDK v3.5.3 的 NewDownloadFileReqBuilder.Build() 只拷贝 PathParams、丢弃 QueryParams，
+// 无法表达 version 查询参数，因此这里用 raw larkcore.ApiReq + client.Do 直接构造请求，
+// 二进制响应体取自 resp.RawBody。
+func DownloadFileVersion(fileToken, version, outputPath, userAccessToken string, timeout ...time.Duration) error {
+	if err := validatePath(outputPath); err != nil {
+		return err
+	}
+	if fileToken == "" {
+		return fmt.Errorf("file_token 不能为空")
+	}
+	if version == "" {
+		return fmt.Errorf("version 不能为空")
+	}
+
+	cli, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	req := &larkcore.ApiReq{
+		HttpMethod:                http.MethodGet,
+		ApiPath:                   "/open-apis/drive/v1/files/:file_token/download",
+		PathParams:                larkcore.PathParams{},
+		QueryParams:               larkcore.QueryParams{},
+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{tokenType},
+	}
+	req.PathParams.Set("file_token", fileToken)
+	req.QueryParams.Set("version", version)
+
+	resp, err := cli.Do(ContextWithTimeout(resolveTimeout(downloadTimeout, timeout)), req, opts...)
+	if err != nil {
+		return fmt.Errorf("下载文件版本失败: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("下载文件版本失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+	// 飞书在权限不足/版本不存在时常返 HTTP 200 + JSON 业务错误体 {code,msg}，
+	// 不拦截会被当成正常二进制写盘。优先用 Content-Type 判定是否为 JSON 错误体，
+	// 缺失/不明确时再以 RawBody 是否以 '{' 开头作辅助（正常二进制 JSON 文件也可能以 '{' 开头，
+	// 故必须能成功 parse 出非零 code 字段才算业务错误）。
+	if code, msg, isErr := parseDownloadJSONError(resp.Header, resp.RawBody); isErr {
+		return fmt.Errorf("下载版本失败: code=%d, msg=%s", code, msg)
+	}
+	// cli.Do 返回完整 RawBody（SDK v3.5.3 不支持流式），size 检查在内存载入后仅防超大文件写盘；
+	// 飞书 markdown/附件通常不大，可接受。
+	if len(resp.RawBody) > maxDownloadSize {
+		return fmt.Errorf("文件超过大小限制 (%d MB)", maxDownloadSize/(1024*1024))
+	}
+
+	return saveToFile(bytes.NewReader(resp.RawBody), outputPath)
+}
+
+// parseDownloadJSONError 判断 download 的 HTTP 200 响应是否为飞书业务错误体 {code,msg}。
+// 飞书 OpenAPI 业务错误响应带 Content-Type: application/json；成功的文件下载返回文件
+// MIME / octet-stream。故仅在 Content-Type 为 JSON 时才尝试解析业务错误，parse 出 code != 0
+// 即视为错误，否则当二进制写盘。
+//
+// 局限：HTTP 200 + application/json + {code:N} 无法与「内容恰为该结构的合法 .json 文件」完美
+// 区分。本函数仅服务于 DownloadFileVersion 的文本/markdown 版本下载（.md 的 Content-Type 非
+// application/json，不触发）；若需下载可能是顶层 {code:N} 结构的 .json 文件，请用
+// DownloadMedia / DownloadFileWithToken（走 SDK Success 判定，不做此启发式）。
+func parseDownloadJSONError(header http.Header, body []byte) (int, string, bool) {
+	if header == nil || !strings.Contains(header.Get("Content-Type"), "application/json") {
+		return 0, "", false
+	}
+	var e struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(body), &e); err != nil {
+		return 0, "", false
+	}
+	if e.Code != 0 {
+		return e.Code, e.Msg, true
+	}
+	return 0, "", false
 }
 
 // maxSingleUploadSize 单次上传的文件大小上限（20MB），超过此大小需使用分片上传

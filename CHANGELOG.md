@@ -4,6 +4,79 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [Unreleased]
+
+### 新增 — 消息搜索 enrich / 多维表格补全 / 输出工程化（jq + 表格/CSV）
+
+进一步对齐 lark-cli，补齐三类此前需回退 lark-cli 的场景。
+
+**① 消息搜索 enrich（`search messages`）**
+
+新增 `--enrich` opt-in 富化：在消息 ID 基础上补全 **内容 / 发送者 / 群名 / 时间**（对齐 lark `+messages-search`）。默认行为保持原 ID 输出，完全向后兼容：
+
+- 默认（无 `--enrich`）：仅返回消息 ID，`-o json` / `--format json` 返回旧 schema `{MessageIDs,HasMore,PageToken}`，与升级前一致
+- `--enrich`：search → 消息 ID → `BatchGetMessages` 取详情 → 解析发送者名/群名 → 人类可读视图；`-o json` / `--format json` 返回 `[]{message_id,msg_type,chat_id,chat_name,sender_id,sender_name,create_time,time,text}` 数组
+- `--format json|pretty|table|ndjson|csv` + `--jq` 结构化输出对两种模式均生效；`--page-all/--page-limit` 自动翻页
+
+**② 多维表格补全（`bitable`）**
+
+补齐 base/v3 + bitable/v1 公开 API 支持、此前缺失的命令：
+
+- `bitable dashboard list|copy`（仪表盘）
+- `bitable form get|patch` + `bitable form field list|patch`（表单及表单问题）
+- `bitable role member list|create|delete|batch-create|batch-delete`（角色协作者）
+- `bitable workflow enable|disable`（工作流启停）
+- `bitable update`（多维表格本体重命名 / 高级权限开关）
+- `bitable record batch-get`（批量获取记录）
+- 新增 `internal/client/bitable_v1.go`：dashboard copy / role member / app update / workflow 启停 base/v3 无对应端点，走 bitable/v1（无需 `X-App-Id` header）。新命令经统一执行器 `bitableRun` + 请求描述符 `bitableReq` 路由 base/v3 与 bitable/v1，写命令支持 `--dry-run` 预览
+
+> 注：dashboard block / form submit 已在后续一轮补齐（见下方「④ 多维表格 / 表格 / vc / mail / markdown 再补全」）。lark-base 的 view 独立 filter-sort 端点走飞书私有扩展 API（`base-api.feishu.cn`），公开 OpenAPI 无对应，未做专用命令——可用 `feishu-cli api` 裸调兜底。
+
+**③ 输出工程化（`internal/output`）**
+
+新增统一输出包，并接入 `api` 与新命令：
+
+- `--format json|pretty|table|ndjson|csv`（`api` / `search messages` / bitable 新增命令）
+- `--jq <expr>`（内置 gojq v0.12.17，纯 Go，无需外部 jq；保持 `go 1.21` 兼容）
+- `api` 命令新增 `--format`/`--jq`（显式指定时走内置渲染，否则保持原 pretty/raw 行为）
+- 大整数精度：渲染链路用 `json.Number`（飞书 19 位 message_id/chat_id 不被 float64 截断）
+- table/csv 渲染 CJK 宽度对齐、单元格换行净化
+
+**新增依赖**：`github.com/itchyny/gojq v0.12.17`（pin 该版本保持 `go 1.21` 兼容，未抬升 go directive）。
+
+### 新增 — ④ 多维表格 / 表格 / vc / mail / markdown 再补全
+
+继续对齐 lark-cli，补齐上一轮仍缺的仪表盘 / 表单 / 工作流 / 附件 / 浮图 / 筛选视图 / 下拉 / 会议机器人 / 邮箱签名 / Markdown diff。
+
+**多维表格（`bitable`）**
+
+- `bitable dashboard create|get|update|delete|arrange`（仪表盘 CRUD + 服务端智能排版，原有 `list|copy`）；`create|update` 支持便捷字段 `--name`/`--theme-style` 或 `--config`/`--config-file` 完整请求体二选一
+- `bitable dashboard block create|get|list|update|delete`（仪表盘块 CRUD）；`create` 支持 `--type`（column/bar/line/pie/ring/area/combo/scatter/funnel/wordCloud/radar/statistics/text）+ `--data-config` 便捷字段
+- `bitable form create|delete|detail|submit`（表单 CRUD + 按分享 token 取详情/提交，原有 `get|patch`）；`detail`/`submit` 走 `share-token`（shr 前缀）无需 base_token；`submit` 不处理附件上传
+- `bitable form field create|delete`（表单问题批量增删，单次 ≤ 10，别名 `questions`，原有 `list|patch`）；`create` 用 `--questions` 数组，`delete` 用 `--question-ids`
+- `bitable workflow create|get|update`（工作流 CRUD，`update` 为整体替换 PUT，原有 `enable|disable|list`）
+- `bitable record upload-attachment|download-attachment|remove-attachment`（记录附件上传 / 下载 / 移除；upload/download 为 2 步编排，单次 ≤ 50 附件）
+
+**表格（`sheet`）**
+
+- `sheet image get|update|media-upload|write-image`（浮图获取 / 更新锚点尺寸偏移 / 上传素材取 file_token / 本地图片写入单元格，原有 `add|list|delete`）
+- `sheet filter-view get|update`（筛选视图获取 / 更新名称范围，原有 `create|list|delete`）
+- `sheet filter-view condition create|get|update|delete|list`（筛选条件 CRUD，按列字母定位）
+- `sheet dropdown get|update|delete`（下拉菜单数据验证获取 / 更新 / 删除，原有 `set`）；`update` 支持多范围 / 多选 `--multiple` / 高亮 `--colors`
+- `sheet batch-set-style`（批量为多范围设置单元格样式，`--data` 传 `{ranges,style}` 数组）
+
+**会议（`vc`）**
+
+- `vc bot meeting-join|meeting-leave|meeting-events`（会议机器人按会议号入会 / 离会 / 查会议事件，对应 `/open-apis/vc/v1/bots/{join,leave,events}`）
+
+**邮件（`mail`）**
+
+- `mail signature`（列出 / 查看邮箱签名，`--detail <签名ID>` 取单个详情）
+
+**Markdown（`markdown`）**
+
+- `markdown diff`（下载远端 Markdown 在本地算 unified diff，不改远端；三模式：远端最新 vs 本地 / 远端某版本 vs 最新 / 版本 A vs 版本 B）
+
 ## [v1.27.0] - 2026-05-21
 
 ### 新增 — `event` 模块（WebSocket 实时事件订阅 + daemon 进程管理）

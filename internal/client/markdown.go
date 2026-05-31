@@ -11,6 +11,49 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
 
+// FetchFileContent 把一个 Drive 文件（如 .md）的最新内容下载到内存并返回字节。
+// 走 GET /open-apis/drive/v1/files/{file_token}/download（同 DownloadFileWithToken），
+// 但不落盘，便于 markdown diff 这类纯比对场景。
+func FetchFileContent(fileToken string, userAccessToken string) ([]byte, error) {
+	tmp, err := os.CreateTemp("", "feishu-md-diff-*.md")
+	if err != nil {
+		return nil, fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
+	if err := DownloadFileWithToken(fileToken, tmpPath, userAccessToken); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取下载内容失败: %w", err)
+	}
+	return data, nil
+}
+
+// FetchFileVersionContent 把一个 Drive 文件指定历史版本的内容下载到内存并返回字节。
+// 走 GET /open-apis/drive/v1/files/{file_token}/download?version=N（同一 file_token + version 查询参数）。
+func FetchFileVersionContent(fileToken, version, userAccessToken string) ([]byte, error) {
+	tmp, err := os.CreateTemp("", "feishu-md-diff-*.md")
+	if err != nil {
+		return nil, fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
+	if err := DownloadFileVersion(fileToken, version, tmpPath, userAccessToken); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取下载内容失败: %w", err)
+	}
+	return data, nil
+}
+
 // OverwriteFileWithToken 覆盖现有 Drive 文件（如 .md）的内容。
 //
 // 飞书 Open API `POST /open-apis/drive/v1/files/upload_all` 支持 `file_token` 参数：
