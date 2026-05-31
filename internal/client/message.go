@@ -31,6 +31,8 @@ const (
 	CardMsgContentTypeRaw  = "raw_card_content"
 )
 
+const messageResourceFileSizeExceedsLimitCode = 234037
+
 // SendMessage sends a message to a user or chat
 func SendMessage(receiveIDType string, receiveID string, msgType string, content string, userAccessToken string) (string, error) {
 	client, err := GetClient()
@@ -1258,6 +1260,10 @@ func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int,
 
 // DownloadMessageResource 下载消息中的资源文件（图片/文件）
 func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) error {
+	if userAccessToken != "" {
+		return downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outputPath, userAccessToken, timeout...)
+	}
+
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -1284,6 +1290,70 @@ func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userA
 	}
 
 	return nil
+}
+
+// downloadMessageResourceWithUserToken calls the message resource API directly.
+// The generated SDK currently marks this endpoint as tenant-token only, but the
+// OpenAPI accepts user_access_token for resources visible to the user.
+func downloadMessageResourceWithUserToken(messageID, fileKey, resourceType, outputPath, userAccessToken string, timeout ...time.Duration) error {
+	reqURL := buildMessageResourceURL(messageID, fileKey, resourceType)
+	t := resolveTimeout(downloadTimeout, timeout)
+
+	httpClient := &http.Client{Timeout: t}
+	req, err := newBearerDownloadRequest(reqURL, userAccessToken, "")
+	if err != nil {
+		return fmt.Errorf("下载消息资源失败: %w", err)
+	}
+
+	httpResp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("下载消息资源失败: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode != http.StatusOK {
+		apiErr, parseErr := parseDownloadAPIError("下载消息资源", httpResp)
+		if parseErr != nil {
+			return parseErr
+		}
+		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
+			return downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
+		}
+		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
+	}
+
+	bodyReader, apiErr, inspectErr := inspectDownloadAPIErrorResponse(httpResp)
+	if inspectErr != nil {
+		return fmt.Errorf("下载消息资源失败: 读取响应失败: %w", inspectErr)
+	}
+	if apiErr != nil {
+		if isDownloadFileSizeLimitError(apiErr.Code, apiErr.Msg, nil) {
+			return downloadBearerURLByRange("下载消息资源", reqURL, outputPath, userAccessToken, t)
+		}
+		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", apiErr.Code, apiErr.Msg)
+	}
+
+	if err := writeStreamToFile(bodyReader, outputPath); err != nil {
+		return fmt.Errorf("保存文件失败: %w", err)
+	}
+	return nil
+}
+
+func buildMessageResourceURL(messageID, fileKey, resourceType string) string {
+	cfg := config.Get()
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+
+	params := url.Values{}
+	params.Set("type", resourceType)
+	return fmt.Sprintf("%s/open-apis/im/v1/messages/%s/resources/%s?%s",
+		baseURL,
+		url.PathEscape(messageID),
+		url.PathEscape(fileKey),
+		params.Encode(),
+	)
 }
 
 // BatchGetMessagesResult 是 BatchGetMessages 的返回值。
