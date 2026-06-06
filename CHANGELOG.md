@@ -4,6 +4,25 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [v1.32.0] - 2026-06-06
+
+### 新功能 — 多维表格支持 `--as bot|user|auto` 身份切换
+
+`bitable` 命令组此前在 CLI 侧**硬性强制 User Token**（未登录直接报错），但底层飞书 `base/v3` 与 `bitable/v1` API 本身一直**同时支持 User / Tenant(App) 两种身份**（client 早已声明 `SupportedAccessTokenTypes:[User, Tenant]`，瓶颈纯在命令封装层）。本版按官方 `lark-cli` 的 `--as` 模式放开：
+
+- 新增命令组 persistent flag **`--as bot|user|auto`**（默认 `auto`），所有 bitable 子命令通用：
+  - `auto`（默认）：User 优先、Tenant 兜底——已登录用 User Token，**未登录/过期自动回落 App Token**
+  - `bot`（= `tenant`/`app`）：强制 App Token，**无需 `auth login`、永不过期，适合 cron / 无人值守 / 脚本自动抓取多维表格**
+  - `user`：强制 User Token（缺失报错，提示可改用 `--as bot`）
+- 新增 `resolveIdentityToken`（`cmd/utils.go`）统一身份解析，替换 9 处咽喉点的 `resolveRequiredUserToken`/`requireUserToken`（`bitable_base`/`field`/`form_crud`/`output`/`record_attachment`）。客户端层零改动
+- 修复后实测：在未登录环境用 App Token 读到此前因 token 过期而判定"不可入 cron"的真实多维表格全部 102 条记录
+
+### 测试与文档
+
+- 新增 `cmd/bitable_identity_test.go`：覆盖 `bot`/`tenant`/`app` 三别名（含大小写/空白）、显式 user token、非法 `--as` 报错、persistent flag 注册与子命令继承
+- `feishu-cli-bitable` 技能 SKILL.md 补「身份选择 `--as`」表格 + cron 示例 + `91403` 协作者排错；description 补 cron / App Token 触发词
+- `CLAUDE.md` Token 策略由「三类」扩为「四类」，新增 `resolveIdentityToken` 身份可选类目
+
 ## [v1.31.0] - 2026-06-05
 
 ### 新功能 — 妙笔BOX（htmlbox）HTML 小组件命令

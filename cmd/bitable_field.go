@@ -130,7 +130,7 @@ func runBaseV3Simple(cmd *cobra.Command, method string, pathFn func(baseToken st
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	token, err := resolveRequiredUserToken(cmd)
+	token, err := resolveIdentityToken(cmd)
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func runBaseV3WithBody(cmd *cobra.Command, method string, pathFn func(baseToken 
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	token, err := resolveRequiredUserToken(cmd)
+	token, err := resolveIdentityToken(cmd)
 	if err != nil {
 		return err
 	}

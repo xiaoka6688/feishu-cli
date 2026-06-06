@@ -150,7 +150,7 @@ func runFormShareToken(cmd *cobra.Command, segments []string, body any) error {
 		})
 	}
 
-	token, err := resolveRequiredUserToken(cmd)
+	token, err := resolveIdentityToken(cmd)
 	if err != nil {
 		return err
 	}

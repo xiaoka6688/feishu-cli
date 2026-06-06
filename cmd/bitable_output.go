@@ -65,7 +65,7 @@ func bitableRun(cmd *cobra.Command, build func(baseToken string) bitableReq) err
 		})
 	}
 
-	token, err := resolveRequiredUserToken(cmd)
+	token, err := resolveIdentityToken(cmd)
 	if err != nil {
 		return err
 	}

@@ -32,7 +32,10 @@ var bitableCmd = &cobra.Command{
   bitable dashboard <list|get|create|...>  仪表盘 CRUD + copy + block
   bitable form <list|get|create|patch|...> 表单 CRUD + field + detail/submit
 
-所有命令默认使用 User Access Token（先 feishu-cli auth login）。
+身份选择 --as（底层 API 同时支持 User / Tenant 身份）：
+  auto  默认。User 优先、Tenant 兜底——已登录用 User Token，未登录/过期自动回落 App Token
+  bot   强制 App Token（无需 auth login，永不过期，适合 cron 无人值守）
+  user  强制 User Token（缺失报错，先 feishu-cli auth login）
 使用 --base-token 传入多维表格 token（从 URL 里的 /base/{token} 片段获取）。
 
 示例:
@@ -44,4 +47,9 @@ var bitableCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(bitableCmd)
+	// --as 身份选择：persistent flag，所有 bitable 子命令继承。
+	// base/v3 与 bitable/v1 API 本身同时支持 User / Tenant 身份，
+	// 默认 auto（User 优先、Tenant 兜底）让未登录/cron 场景自动用 App Token。
+	bitableCmd.PersistentFlags().String("as", "auto",
+		"身份: bot(App Token) | user(User Token) | auto(User 优先 Tenant 兜底, 默认)")
 }

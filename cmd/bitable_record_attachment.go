@@ -141,7 +141,7 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 			)
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -247,7 +247,7 @@ var bitableRecordDownloadAttachmentCmd = &cobra.Command{
 			)
 		}
 
-		token, err := resolveRequiredUserToken(cmd)
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}

@@ -10,6 +10,11 @@ description: >-
   "角色"、"role"、"高级权限"、"advperm"、"数据聚合"、"data query"、
   "仪表盘"、"dashboard"、"表单"、"form"、"工作流"、"workflow"、"记录附件"、
   "复制多维表格"时使用。
+  支持 --as bot|user|auto 身份切换：默认 auto（User 优先、Tenant 兜底），
+  --as bot 用 App Token 操作多维表格，无需 auth login、永不过期，
+  适合 cron / 无人值守 / 脚本自动抓取多维表格内容。
+  凡涉及"App Token 读写 bitable"、"不登录抓多维表格"、"cron 定时同步多维表格"、
+  "bitable 报需要 User Token / 91403 没权限"时也应使用本技能。
 argument-hint: "[base_token] [table_id]"
 user-invocable: true
 allowed-tools: Bash(feishu-cli bitable:*), Bash(feishu-cli auth:*), Read, Write
@@ -23,8 +28,30 @@ allowed-tools: Bash(feishu-cli bitable:*), Bash(feishu-cli auth:*), Read, Write
 
 ## 前置条件
 
-- **认证**：所有命令**必需 User Access Token**（读类、写类均强制要求 User Token，未登录直接报错）。先执行 `feishu-cli auth login` 登录
-- **App 凭证**：应用 App ID + App Secret（base/v3 需要 `X-App-Id` header，自动注入）
+- **认证**：所有命令支持 `--as bot|user|auto` 身份切换（详见下方「身份选择」），默认 `auto`（User 优先、Tenant 兜底）。已登录用 User Token，未登录自动回落 App Token；要稳定用 App Token 跑（cron）显式加 `--as bot`
+- **App 凭证**：应用 App ID + App Secret（base/v3 需要 `X-App-Id` header，自动注入）。`--as bot` / `auto` 回落 Tenant 时只靠 App 凭证，无需 `auth login`
+
+## 身份选择 `--as`（命令组 persistent flag，所有子命令通用）
+
+飞书 `base/v3` 与 `bitable/v1` API **本身同时支持 User 和 Tenant(App) 两种身份**，本技能据此提供三档：
+
+| `--as` | 身份 | 何时用 | 是否需 `auth login` |
+|--------|------|--------|---------------------|
+| `auto`（默认） | User 优先、Tenant 兜底 | 交互式日常使用 | 否（未登录自动用 App Token） |
+| `bot`（= `tenant`/`app`） | 强制 App Token | **cron / 无人值守 / 脚本自动抓取**，永不过期 | **否** |
+| `user` | 强制 User Token | 必须以本人身份操作（个人 base、协作者权限） | 是（缺失报错） |
+
+```bash
+# cron 场景：App 凭证走环境变量，App Token 抓多维表格，不依赖登录、不会过期
+export FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx
+feishu-cli bitable table list  --base-token bscnxxxx --as bot
+feishu-cli bitable record list --base-token bscnxxxx --table-id tblxxx --as bot
+feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx \
+  --config '{"fields":{"文本":"hello"}}' --as bot
+```
+
+> **`--as bot` 报 `91403 you don't have permission`**：不是 token 问题，是 **Bot 还不是这张多维表格的协作者**。把 Bot 加为协作者（`feishu-cli perm add <base_token> --doc-type bitable --member-type open_id --member-id <bot_open_id> --perm full_access`）或把文档可见性调到组织可见即可。Bot 自己创建的 base 默认就有权限。
+> **历史背景**：旧版本 bitable 命令在 CLI 侧硬性强制 User Token（未登录直接报错），其实底层 API 一直支持 Tenant Token——现已按官方 `lark-cli` 的 `--as` 模式放开。
 
 ## 命令速查
 

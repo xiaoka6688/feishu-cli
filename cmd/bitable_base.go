@@ -43,7 +43,7 @@ var bitableCreateCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token, err := requireUserToken(cmd, "bitable create")
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -98,7 +98,7 @@ var bitableGetCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token, err := requireUserToken(cmd, "bitable get")
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}
@@ -131,7 +131,7 @@ var bitableCopyCmd = &cobra.Command{
 		if err := config.Validate(); err != nil {
 			return err
 		}
-		token, err := requireUserToken(cmd, "bitable copy")
+		token, err := resolveIdentityToken(cmd)
 		if err != nil {
 			return err
 		}

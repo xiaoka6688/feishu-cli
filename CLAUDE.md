@@ -59,10 +59,11 @@ export FEISHU_APP_SECRET=xxx
 
 通过 **OAuth 2.0 Device Flow（RFC 8628）** 获取 User Access Token，用于搜索、审批任务查询等需要用户授权的功能。**无需配置重定向 URL 白名单**（v1.18+ 已删除 Authorization Code Flow）。
 
-**Token 使用策略**（按命令分三类，对应 `cmd/utils.go` 三个 helper）：
+**Token 使用策略**（按命令分四类，对应 `cmd/utils.go` 四个 helper）：
 - **读类 · User 优先 + Tenant 兜底**（`resolveOptionalUserTokenWithFallback`，约 85 个命令）：`msg history/list/get/mget/thread-messages/resource-download`、`task get/list/subtask list/comment list/tasklist get/list/tasks`、`calendar get/list/primary/agenda/freebusy/suggestion/room-find/event get/list/search/attendee list`、`file meta/stats/list/version list/get/download`、`board image/nodes/export-code/lint`、`user read`、`wiki get/nodes/spaces/export/member list`、`drive pull/push/status`、`vc bot meeting-events`（端点拒收 Tenant Token，User 优先）、**sheet 全家桶**（所有 sheet 子命令含写）等。优先级链：`--user-access-token` → `FEISHU_USER_ACCESS_TOKEN` → `~/.feishu-cli/token.json`（过期自动刷新）→ `config.yaml` 的 `user_access_token` → App Token 兜底。
 - **写类 · 默认 Bot 身份**（`resolveOptionalUserToken`）：所有 `add/create/update/delete/move/copy/import/upload/send/reply/forward/merge-forward` 类命令、`comment reply`、`doc content-update / table 写`、`msg delete`（Bot 自撤回）等。**不会自动加载 token.json**，仅当显式传 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 时切到 User Token。`vc bot meeting-join/leave` 同属默认 Bot 身份，但用更严格的 `resolveFlagUserToken`：**只认 `--user-access-token` flag，连 `FEISHU_USER_ACCESS_TOKEN` 环境变量都不读**。
 - **必须 User Token**（`resolveRequiredUserToken` / `requireUserToken`）：`search docs/messages/apps`、`approval task query/approve/reject/transfer`、`approval instance get/cancel/cc`、`task my`（`my_tasks`）、`msg pin/reaction/search-chats/flag`、`chat get/update/delete/member`、`vc search/notes/recording`、`minutes/mail` 全部、`drive upload/download/export/import/move/add-comment/task-result/search`、`calendar rsvp`、`markdown create/fetch/overwrite/diff` 等。失败直接报错。
+- **身份可选 · `--as` 显式切换**（`resolveIdentityToken`）：`bitable` 全家桶（所有子命令含读写）。命令组 persistent flag `--as bot|user|auto`，默认 `auto`（User 优先、Tenant 兜底，未登录自动用 App Token）；`--as bot` 强制 App Token（cron/无人值守，永不过期，无需 `auth login`）；`--as user` 强制 User Token（缺失报错）。底层 `base/v3` 与 `bitable/v1` API 本身同时支持 User/Tenant 身份，故 CLI 不再硬性强制 User Token（对齐官方 `lark-cli` 的 `--as` 模式）。
 - **审批任务查询**：`approval task query` 会调用 `/authen/v1/user_info` 推断 `open_id`，缓存到 `~/.feishu-cli/user_profile.json`，`auth logout` 时自动清理
 
 **登录命令四种模式**：

@@ -70,13 +70,40 @@ func resolveRequiredUserToken(cmd *cobra.Command) (string, error) {
 }
 
 // requireUserToken 封装 resolveRequiredUserToken，失败时返回带命令名和 auth login 提示的统一错误。
-// 新命令（vc/minutes/mail/drive/bitable/...）都走这个 helper，保持错误信息一致。
+// 新命令（vc/minutes/mail/drive/...）都走这个 helper，保持错误信息一致。
 func requireUserToken(cmd *cobra.Command, cmdName string) (string, error) {
 	token, err := resolveRequiredUserToken(cmd)
 	if err != nil {
 		return "", fmt.Errorf("%s 需要 User Access Token（请先 `feishu-cli auth login`）: %w", cmdName, err)
 	}
 	return token, nil
+}
+
+// resolveIdentityToken 根据命令的 --as flag 解析应使用的 token。
+// 返回的字符串为空表示使用 Tenant(App) Token；非空表示 User Token。
+// 适用于底层飞书 API 同时支持 user / tenant 身份的命令组（如 bitable，
+// 其 base/v3 与 bitable/v1 client 都声明 SupportedAccessTokenTypes:[User, Tenant]）。
+//
+//	auto（默认）: User 优先、Tenant 兜底——已登录用 User Token，未登录/过期自动回落 App Token，
+//	             适配 cron 无人值守场景；
+//	bot/tenant/app: 强制 App Token（返回空字符串）；
+//	user: 强制 User Token，缺失则报错。
+func resolveIdentityToken(cmd *cobra.Command) (string, error) {
+	as, _ := cmd.Flags().GetString("as")
+	switch strings.ToLower(strings.TrimSpace(as)) {
+	case "", "auto":
+		return resolveOptionalUserTokenWithFallback(cmd), nil
+	case "bot", "tenant", "app":
+		return "", nil
+	case "user":
+		token, err := resolveRequiredUserToken(cmd)
+		if err != nil {
+			return "", fmt.Errorf("--as user 需要 User Access Token（请先 `feishu-cli auth login`，或改用 --as bot 走 App Token）: %w", err)
+		}
+		return token, nil
+	default:
+		return "", fmt.Errorf("--as 仅支持 bot|user|auto，得到 %q", as)
+	}
 }
 
 // resolveCurrentAuthedUserID returns the current logged-in user's ID for the requested type.
