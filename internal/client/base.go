@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/xiaoka6688/feishu-cli/internal/config"
 )
 
 // base/v3 API 服务路径前缀

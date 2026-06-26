@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"github.com/riba2534/feishu-cli/internal/registry"
+	"github.com/xiaoka6688/feishu-cli/internal/registry"
 )
 
 // KnownScopeDomainNames returns supported domain names.

@@ -11,7 +11,7 @@ import (
 
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/xiaoka6688/feishu-cli/internal/config"
 )
 
 // UserContactIDInfo 用户联系信息（通过邮箱/手机号查询）

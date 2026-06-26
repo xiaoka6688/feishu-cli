@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/xiaoka6688/feishu-cli/internal/profile"
 )
 
 // EventsDir 返回 feishu-cli 事件订阅状态目录。

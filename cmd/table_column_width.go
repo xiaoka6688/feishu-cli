@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/xiaoka6688/feishu-cli/internal/converter"
 )
 
 // parseTableColumnWidthFlag 解析 --table-column-width flag，得到 ConvertOptions 的 ColumnWidthMode/Values。

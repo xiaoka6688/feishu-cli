@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/xiaoka6688/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -91,7 +91,7 @@ var rootCmd = &cobra.Command{
   # 查询当前登录用户的审批待办（需先 auth login）
   feishu-cli approval task query --topic todo
 
-更多信息请访问: https://github.com/riba2534/feishu-cli`,
+更多信息请访问: https://github.com/xiaoka6688/feishu-cli`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// --config 仅影响 config.yaml 加载，token 仍按 profile 解析；显式提醒避免错配
 		if cfgFile != "" {

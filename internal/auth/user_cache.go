@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/xiaoka6688/feishu-cli/internal/profile"
 )
 
 // CurrentUserCache stores the current logged-in user's profile metadata.

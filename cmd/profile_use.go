@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/xiaoka6688/feishu-cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 

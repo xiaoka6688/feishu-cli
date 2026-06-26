@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/xiaoka6688/feishu-cli/internal/auth"
+	"github.com/xiaoka6688/feishu-cli/internal/client"
 )
 
 // scanAndUploadInlineImages 是 --inline-images-auto-scan 的内部实现

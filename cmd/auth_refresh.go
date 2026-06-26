@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/xiaoka6688/feishu-cli/internal/auth"
+	"github.com/xiaoka6688/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 

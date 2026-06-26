@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
-	"github.com/riba2534/feishu-cli/internal/profile"
+	"github.com/xiaoka6688/feishu-cli/internal/auth"
+	"github.com/xiaoka6688/feishu-cli/internal/profile"
 	"github.com/spf13/cobra"
 )
 

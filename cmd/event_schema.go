@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/event"
+	"github.com/xiaoka6688/feishu-cli/internal/event"
 	"github.com/spf13/cobra"
 )
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/xiaoka6688/feishu-cli/internal/auth"
 )
 
 // writeTestToken 在 tempdir 写入 token.json 并设置 HOME 使 auth.LoadToken 能找到它

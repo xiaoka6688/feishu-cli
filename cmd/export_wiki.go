@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/config"
-	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/xiaoka6688/feishu-cli/internal/client"
+	"github.com/xiaoka6688/feishu-cli/internal/config"
+	"github.com/xiaoka6688/feishu-cli/internal/converter"
 	"github.com/spf13/cobra"
 )
 

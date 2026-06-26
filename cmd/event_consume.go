@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/riba2534/feishu-cli/internal/config"
-	"github.com/riba2534/feishu-cli/internal/event"
+	"github.com/xiaoka6688/feishu-cli/internal/config"
+	"github.com/xiaoka6688/feishu-cli/internal/event"
 	"github.com/spf13/cobra"
 )
 

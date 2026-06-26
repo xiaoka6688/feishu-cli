@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/xiaoka6688/feishu-cli/internal/client"
+	"github.com/xiaoka6688/feishu-cli/internal/converter"
 )
 
 // FeishuUserResolver 实现 converter.UserResolver 接口，通过飞书 API 批量解析用户信息

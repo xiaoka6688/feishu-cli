@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/xiaoka6688/feishu-cli/internal/client"
 )
 
 // resolveSafeLocalDir 把用户传入的 --local-dir 解为「完全解析符号链接 + 限定在 cwd 子树」的绝对路径。

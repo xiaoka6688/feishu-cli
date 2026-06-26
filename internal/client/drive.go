@@ -16,7 +16,7 @@ import (
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/xiaoka6688/feishu-cli/internal/config"
 )
 
 // 最大下载文件大小限制 (100MB)

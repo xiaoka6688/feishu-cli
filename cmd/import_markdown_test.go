@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
-	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/xiaoka6688/feishu-cli/internal/converter"
 )
 
 func TestValidateWorkerCount(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/event"
+	"github.com/xiaoka6688/feishu-cli/internal/event"
 )
 
 func TestEventListCmd_OutputsAllDomains(t *testing.T) {

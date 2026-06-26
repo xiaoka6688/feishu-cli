@@ -6,7 +6,7 @@ import (
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
-	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/xiaoka6688/feishu-cli/internal/client"
 )
 
 // listMessagesViaSearch 通过搜索+逐条获取的方式获取消息列表

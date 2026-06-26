@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/converter"
+	"github.com/xiaoka6688/feishu-cli/internal/converter"
 )
 
 func TestNormalizeSheetExportFormat(t *testing.T) {

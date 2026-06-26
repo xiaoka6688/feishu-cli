@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/xiaoka6688/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
 )
 

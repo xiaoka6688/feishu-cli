@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/riba2534/feishu-cli/internal/client"
-	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/xiaoka6688/feishu-cli/internal/client"
+	"github.com/xiaoka6688/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 

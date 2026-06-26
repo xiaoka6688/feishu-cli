@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/xiaoka6688/feishu-cli/internal/auth"
 )
 
 type loginScopeSummary struct {
@@ -96,7 +96,7 @@ func printTokenSuccess(token *auth.TokenStore, summary *loginScopeSummary) {
 		fmt.Fprintln(os.Stderr, "    排查步骤:")
 		fmt.Fprintln(os.Stderr, "      1. 登录飞书开放平台应用权限管理页面，确认已开通 offline_access")
 		fmt.Fprintln(os.Stderr, "      2. 执行 feishu-cli auth logout && feishu-cli auth login 重新授权")
-		fmt.Fprintln(os.Stderr, "      3. 仍失败请反馈: https://github.com/riba2534/feishu-cli/issues/94")
+		fmt.Fprintln(os.Stderr, "      3. 仍失败请反馈: https://github.com/xiaoka6688/feishu-cli/issues/94")
 	}
 }
 
