@@ -102,3 +102,147 @@ git push origin main
 2. **`json` 目录**是中间缓存（blocks_cache.json 等），也不要 commit
 3. **`__pycache__`** 加上 .gitignore
 4. **`sync_feishu_to_obsidian.py` 里硬编码了你的 App ID/Secret** —— 如果要发到 GitHub，**改成读取环境变量或 config**！
+
+---
+
+## 🌐 多电脑协作工作流（功能分支模式）
+
+> 2026-06-27 补充：作者（小卡）在多台电脑之间协作时使用的工作流。
+
+### 为什么需要分支？
+
+只有 `main` 一个分支时，**两台电脑同时改就会出现冲突**。功能分支模式：
+
+- **`main`** = 永远稳定的"主分支"
+- **`feat/xxx` / `fix/xxx` / `docs/xxx`** = 临时分支，开发完 merge 回 main
+
+### 5 类分支命名规范
+
+| 分支前缀 | 用途 | 例子 |
+|----------|------|------|
+| `feat/` | 新功能 | `feat/sync-feishu-obsidian` |
+| `fix/` | 修 bug | `fix/feishu2obsidian-frontmatter` |
+| `refactor/` | 重构（不改功能） | `refactor/go-mod-xiaoka` |
+| `docs/` | 文档 | `docs/update-troubleshooting` |
+| `chore/` | 杂项（依赖、CI） | `chore/upgrade-go-1.22` |
+
+### 日常开发流程
+
+```bash
+# === 1. 开始工作前 ===
+cd /d/AI/feishu-cli
+git checkout main
+git pull                            # 拉取最新
+
+# === 2. 创建分支 ===
+git checkout -b feat/my-new-feature
+
+# === 3. 改代码 ===
+# ... 编辑文件 ...
+python feishu2obsidian.py --help    # 自测
+go build -o /tmp/test .             # 编译测试
+
+# === 4. 提交 ===
+git add -A
+git commit -m "feat: 新功能描述"
+
+# === 5. 推到远程 ===
+git push -u origin feat/my-new-feature
+
+# === 6. 合并到 main（两种方式） ===
+# 方式 A：本地 merge（推荐，单人用）
+git checkout main
+git pull
+git merge feat/my-new-feature       # 快进合并
+git push
+git branch -d feat/my-new-feature   # 删除本地分支
+
+# 方式 B：GitHub PR（多人协作时）
+# 在网页上点 "Compare & pull request"
+# Review 后 merge
+```
+
+### 跨设备切换
+
+```bash
+# === 电脑 A 完成后，电脑 B 开始 ===
+# 电脑 B
+cd /d/AI/feishu-cli
+git fetch origin                    # 拿所有远程分支
+git checkout feat/my-new-feature    # 切到 A 正在用的分支
+# ... 继续改 ...
+git push                            # 推回同一分支（可能冲突，需 rebase）
+```
+
+### 冲突处理
+
+```bash
+# 如果 push 时报 "non-fast-forward"
+git pull --rebase origin main       # 把你的 commit 重放到 main 之后
+# 手动解决冲突文件
+git add <conflict-files>
+git rebase --continue
+git push
+```
+
+### 5 条铁律
+
+1. **不要同时改同一个文件**——A 改 `feishu2obsidian.py` 时，B 别动
+2. **新功能用分支**——大改动开 `feat/xxx`
+3. **每天开工前先拉**——`git pull --rebase`
+4. **commit 前先自测**——`go build` + 几个 `--help`
+5. **push 前先看 diff**——`git diff origin/main`
+
+### 一键同步脚本（`sync.sh`）
+
+保命用，在每台电脑的 `feishu-cli/` 目录保存一份：
+
+```bash
+#!/bin/bash
+set -e
+cd "$(dirname "$0")"
+
+# 检查未提交改动
+if [[ -n $(git status --porcelain) ]]; then
+    echo "⚠️  有未提交改动"
+    git status --short
+    read -p "stash 暂存？(y/N) " c
+    [[ "$c" == "y" ]] && git stash push -m "auto-$(date +%H%M%S)" || exit 1
+fi
+
+# 拉取
+git pull --rebase
+
+# 校验
+go build -o /tmp/test-build . && echo "✓ Go build"
+python feishu2obsidian.py --help > /dev/null && echo "✓ feishu2obsidian"
+python obsidian2feishu.py --help > /dev/null && echo "✓ obsidian2feishu"
+
+# 恢复 stash
+git stash list | grep -q "auto-" && git stash pop
+echo "🎉 同步完成"
+```
+
+### 紧急回退
+
+```bash
+# 撤销最后一次 commit（保留改动）
+git reset --soft HEAD~1
+
+# 撤销到指定 commit
+git reset --soft <hash>
+
+# 彻底放弃改动
+git reset --hard HEAD
+
+# 从远程覆盖本地
+git fetch origin && git reset --hard origin/main
+```
+
+### 当前分支情况
+
+- `main` = 稳定主分支
+- 本地无其他分支
+- 远程也无其他分支（只有 `main`）
+
+如需新功能或大改动，开 `feat/xxx` 分支即可。
