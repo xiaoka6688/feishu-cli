@@ -72,26 +72,68 @@ def transform_lark_table(text: str) -> str:
 
 
 def add_obsidian_frontmatter(text: str, title: str, source_url: str = "") -> str:
-    """添加 Obsidian 友好的 YAML frontmatter"""
-    if text.startswith("---"):
-        return text  # 已有 frontmatter
+    """添加 Obsidian 友好的 YAML frontmatter
+
+    飞书导出的 MD 文件首行通常是 '---'，那是飞书的引用块分割线，
+    不是 YAML frontmatter。需要做配对检查。
+    """
+    # 1. 严格按 YAML frontmatter 格式判断：开头 ---, 紧跟 ---, 中间是 YAML
+    if text.lstrip().startswith("---"):
+        lines = text.lstrip().split("\n")
+        # 找首段 '---' 配对
+        i = 0
+        while i < len(lines) and lines[i].strip() == "":
+            i += 1
+        if i < len(lines) and lines[i].strip() == "---":
+            j = i + 1
+            while j < len(lines) and lines[j].strip() != "---":
+                j += 1
+            if j < len(lines):
+                # 找到了配对，检查中间内容是否像 YAML（key: value 形式）
+                yaml_content = "\n".join(lines[i+1:j])
+                if ":" in yaml_content and re.search(r"^\w[\w\s]*:", yaml_content, re.MULTILINE):
+                    # 看起来是真的 YAML frontmatter，跳过
+                    return text
 
     import datetime
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    frontmatter = f"""---
-title: {title}
-created: {now}
-source: feishu
-{f'source_url: {source_url}' if source_url else ''}
-tags:
-  - feishu
-  - imported
----
+    # 飞书导出的首段 '---' (飞书分割线) 也要剥离，避免和我们新加的冲突
+    body = text
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines) and lines[i].strip() == "":
+        i += 1
+    if i < len(lines) and lines[i].strip() == "---":
+        j = i + 1
+        while j < len(lines) and lines[j].strip() != "---":
+            j += 1
+        if j < len(lines):
+            # 飞书自带的元信息（标题/创建时间/来源/标签），保留
+            k = j + 1
+            while k < len(lines) and lines[k].strip() == "":
+                k += 1
+            body = "\n".join(lines[k:])
 
-"""
+    source_url_line = (f"source_url: {source_url}" if source_url else "").rstrip()
+    frontmatter_lines = [
+        "---",
+        f"title: {title}",
+        f"created: {now}",
+        "source: feishu",
+    ]
+    if source_url_line:
+        frontmatter_lines.append(source_url_line)
+    frontmatter_lines.extend([
+        "tags:",
+        "  - feishu",
+        "  - imported",
+        "---",
+        "",
+    ])
+    frontmatter = "\n".join(frontmatter_lines)
 
-    return frontmatter + text
+    return frontmatter + body
 
 
 def main():

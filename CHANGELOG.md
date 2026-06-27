@@ -4,6 +4,52 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [v1.33.0] - 2026-06-27 (实战增强版)
+
+> ⭐ 实战飞书知识库（21 篇文档 + 318 张图 + 33 个视频）同步到 Obsidian 过程中的全部踩坑修复。
+
+### 新增
+
+- **`install.py`** - 一步安装脚本（Windows 优化）：自动检查 Go/Node/Python、编译 feishu-cli、装 lark-cli、写凭证、发起 OAuth、跑 doctor
+- **`auth_all.py`** - 一次性申请所有 35 个 OAuth scope（合并了原 wiki / drive / sheets 三次授权）
+- **`sync_feishu_to_obsidian.py`**（重写） - **主入口** 一键同步飞书 Wiki 树到 Obsidian Vault，集成：
+  - 递归拿全部节点（不再丢）
+  - 用底层 docx blocks API 重建 MD（不丢 View/Grid 容器）
+  - 自动处理 sheet 节点（cell 图片不再丢）
+  - 自动算 vault 根相对路径（资源不再找不到）
+  - 修首行 `---` 误判 frontmatter
+  - 修 heading 字段路径错误
+  - 资源下载 + 事后孤儿资源兜底
+- **`rebuild_md_from_blocks.py`**（重写） - 从 docx 块数据重建 MD，含 asset_prefix 自动计算
+- **`rebuild_sheet_doc_v3.py`** - 重建 sheet MD（含 cell 图片位置映射）
+- **`build_sheet_token_map.py`** - 建立 sheet cell embed_id → file_token 一一映射
+- **`extract_sheet_layout.py`** - 用 V2 API 拿 sheet 全布局（embed_id + 位置）
+- **`fix_md_asset_paths.py`** - 修复已有 MD 的资源路径
+- **`download_videos.py`** / **`download_all_videos.py`** / **`download_wiki_images.py`** - 批量下载
+- **`TROUBLESHOOTING.md`** - **完整的踩坑记录文档**（7 大类问题 + 解决方案 + 35 个 scope 一次性申请）
+
+### 修复
+
+- 🔴 **首行 `---` 误判 frontmatter**：飞书导出文件首行是引用块分割线，不是 YAML frontmatter。原 `feishu2obsidian.py` 会跳过添加元信息。新版严格按 YAML 格式（key: value）判断。
+- 🔴 **View/Grid/Callout 容器被丢弃**：原 `export-tree` 不递归 View 块。改用底层 `docx/v1/documents/.../blocks` API 递归全部 12 种块类型。
+- 🔴 **heading 字段名错误**：飞书 v1 API 字段是 `heading1.elements.text_run.content`（嵌套），不是 `heading1.text`。新版兼容两种格式。
+- 🔴 **sheet 节点 280+ 张图全丢**：原 export-tree 不支持 sheet 单元格图片。新版用 V2 API 拿 embed_id + read-rich 拿 file_token，按 cell 顺序一一映射。
+- 🔴 **资源路径硬编码为 `./assets/`**：14 个 vault 子目录 MD 100% 解析失败。**根因**：Obsidian 严格按 MD 所在目录解析相对路径。**修复**：自动按深度加 `../` 前缀。
+- 🟡 **2 个 mp4 孤儿资源**：下载时某些跨节点共享资源被放错位置。新版增加 `fix_orphan_assets` 事后兜底，扫描 MD 引用后自动复制到对应子目录。
+- 🟡 **OAuth 反复授权 3 次**：原 `auth login --domain X` 只授该域最小 scope，跨域需要重新授权。新版用 35 个 scope 一次拿全。
+
+### 优化
+
+- `feishu2obsidian.py` 严格按 YAML 格式判定 frontmatter，避免误判
+- `rebuild_md_from_blocks.py` 完整支持 18 种 block_type（含 11=heading9、19=callout、23=video、33=view）
+- 资源下载自动去重、跳过已存在文件
+- sheet 处理支持 8 个工作表 × 200+ 行 × 36 列
+
+### 测试
+
+- 实战同步飞书 Wiki 树：21 个文档 + 318 张图 + 33 个视频 = 354 个资源，494 MB
+- 全量验证所有 MD 引用 100% 可达（`./assets/...` → Obsidian 解析后命中实际文件）
+
 ## [v1.32.0] - 2026-06-06
 
 ### 新功能 — 多维表格支持 `--as bot|user|auto` 身份切换

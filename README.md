@@ -10,9 +10,10 @@
 
 <p align="center">
   <a href="https://github.com/xiaoka6688/feishu-cli">GitHub</a> ·
-  <a href="#安装">安装</a> ·
-  <a href="#飞书--obsidian-双向同步">飞书 ↔ Obsidian</a> ·
-  <a href="#命令参考">命令参考</a>
+  <a href="#-快速开始">快速开始</a> ·
+  <a href="#-飞书--obsidian-双向同步">飞书 ↔ Obsidian</a> ·
+  <a href="TROUBLESHOOTING.md">踩坑记录</a> ·
+  <a href="#-命令参考">命令参考</a>
 </p>
 
 ---
@@ -45,44 +46,70 @@
 
 ---
 
-## 🚀 安装
+## 🚀 快速开始（**一次跑通**）
+
+> ⭐ **v1.32.x 新版**：实战中积累的踩坑都已修复（View 容器、首行 `---` 误判、sheet 图片、vault 相对路径等）。**强烈建议升级到最新版**。
 
 ### 一键安装（推荐）
 
-**Linux / macOS：**
 ```bash
+# 1. 克隆
 git clone https://github.com/xiaoka6688/feishu-cli.git
 cd feishu-cli
-./setup-all.sh
+
+# 2. 一步安装（自动检查环境 + 编译 + 装 lark-cli + 写凭证 + 一次性 OAuth）
+python install.py
+
+# 期间会提示输入:
+#   - App ID (cli_xxx 开头)
+#   - App Secret
+#   - 浏览器完成 OAuth 授权（35 个 scope 一次拿全，**不需要分多次授权**）
 ```
 
-**Windows（PowerShell）：**
-```powershell
-git clone https://github.com/xiaoka6688/feishu-cli.git
-cd feishu-cli
-.\install.ps1
-```
+> macOS / Linux 用户：用 `bash setup-all.sh`，但 OAuth 部分需手动跑 `python auth_all.py`。
 
-### 手动安装
+### 一键同步飞书 Wiki 树到 Obsidian
 
 ```bash
-# 1. 装 feishu-cli（开源）
-go install github.com/xiaoka6688/feishu-cli@latest
+# 同步整棵 Wiki 树到你的 Obsidian Vault
+python sync_feishu_to_obsidian.py --wiki "WIKI_TOKEN" --vault "G:/飞书知识库"
 
-# 2. 装 lark-cli（官方）
-npm install -g @larksuite/cli
+# 同步单个文档
+python sync_feishu_to_obsidian.py --doc "DOC_TOKEN" --vault "G:/飞书知识库"
 
-# 3. 装转换脚本
-cp feishu2obsidian.py obsidian2feishu.py /usr/local/bin/
+# 从本地 MD 同步
+python sync_feishu_to_obsidian.py --md "本地.md" --title "标题" --vault "G:/飞书知识库"
 ```
 
-### 验证
+**完成**！Obsidian 里直接打开 Vault 就能看到所有文档、图片、视频、表格全部对齐飞书。
+
+### 安装验证
 
 ```bash
-feishu-cli --version    # v1.32.0
-lark-cli --version      # 1.0.28
-feishu-cli doctor       # 6 项健康检查
+feishu-cli --version    # feishu-cli version dev 或 v1.32.x
+lark-cli --version      # lark-cli version 1.0.x
+feishu-cli doctor       # 6 项健康检查（应输出 "全部通过 ✓"）
 ```
+
+### OAuth 一次拿全
+
+升级到最新版后，**只需要授权一次**（合并了原 wiki / drive / sheets 三次授权）：
+
+```bash
+# 一步发起 + 浏览器授权 + 轮询
+python auth_all.py
+
+# 或手动两步
+feishu-cli auth login --no-wait --json --scope "auth:user.id:read docs:... wiki:... drive:... sheets:... (完整 35 个 scope 见 TROUBLESHOOTING.md)"
+# 浏览器打开链接授权
+feishu-cli auth login --device-code <DEVICE_CODE>
+```
+
+> 💡 **Token 有效期内（含自动刷新）无需重新授权**。
+
+### 常见问题
+
+遇到问题先看 📖 **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** —— 这里汇总了 7 大类踩坑和一次性解决。
 
 ---
 

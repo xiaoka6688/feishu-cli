@@ -36,6 +36,7 @@ Thumbs.db
 *.env.local
 config.yaml
 config.local.yaml
+config.local.py
 
 # 临时文件
 tmp/
@@ -46,3 +47,22 @@ temp/
 # 导出的资源文件
 assets/
 *.md.bak
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 中间缓存
+json/
+blocks_cache.json
+doc_token_map.json
+image_map.json
+all_tokens.json
+sheet_cells.json
+sheet_layout.json
+sheet_token_map.json
+
+# 个人报告（不上传）
+项目分析报告-小白指南.md
+项目分析报告.md
