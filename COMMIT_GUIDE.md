@@ -139,7 +139,7 @@ git checkout -b feat/my-new-feature
 
 # === 3. 改代码 ===
 # ... 编辑文件 ...
-python feishu2obsidian.py --help    # 自测
+python scripts/core/feishu2obsidian.py --help    # 自测
 go build -o /tmp/test .             # 编译测试
 
 # === 4. 提交 ===
@@ -215,8 +215,8 @@ git pull --rebase
 
 # 校验
 go build -o /tmp/test-build . && echo "✓ Go build"
-python feishu2obsidian.py --help > /dev/null && echo "✓ feishu2obsidian"
-python obsidian2feishu.py --help > /dev/null && echo "✓ obsidian2feishu"
+python scripts/core/feishu2obsidian.py --help > /dev/null && echo "✓ feishu2obsidian"
+python scripts/core/obsidian2feishu.py --help > /dev/null && echo "✓ obsidian2feishu"
 
 # 恢复 stash
 git stash list | grep -q "auto-" && git stash pop

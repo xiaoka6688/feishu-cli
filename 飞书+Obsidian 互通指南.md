@@ -464,7 +464,7 @@ feishu-cli file list
 
 **Windows：**
 ```powershell
-python feishu2obsidian.py feishu-doc.md -o obsidian-doc.md `
+python scripts/core/feishu2obsidian.py feishu-doc.md -o obsidian-doc.md `
   --title "我的笔记" `
   --source-url "https://feishu.cn/docx/xxx"
 ```
@@ -515,7 +515,7 @@ echo [2/3] 提取 Markdown...
 python -c "import json; d=json.load(open('temp.json')); open('temp.md','w',encoding='utf-8').write(d['data']['markdown'])"
 
 echo [3/3] 转换并放进 Obsidian...
-python feishu2obsidian.py temp.md -o "%OBSIDIAN_VAULT%\%TITLE%.md" --title "%TITLE%"
+python scripts/core/feishu2obsidian.py temp.md -o "%OBSIDIAN_VAULT%\%TITLE%.md" --title "%TITLE%"
 del temp.json temp.md
 echo ✅ 完成：%OBSIDIAN_VAULT%\%TITLE%.md
 ```
@@ -927,7 +927,7 @@ lark-cli docs +fetch --doc xxx --as user 2>/dev/null > tmp.json
 
 # 2. 转换
 python -c "import json; d=json.load(open('tmp.json')); open('doc.md','w').write(d['data']['markdown'])"
-python feishu2obsidian.py doc.md -o obsidian-doc.md
+python scripts/core/feishu2obsidian.py doc.md -o obsidian-doc.md
 
 # 3. 图片用 lark-cli media-download 单独下载
 # 进阶：用 lark-cli 下载 + 批量替换

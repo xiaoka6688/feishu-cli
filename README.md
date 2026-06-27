@@ -58,7 +58,7 @@ git clone https://github.com/xiaoka6688/feishu-cli.git
 cd feishu-cli
 
 # 2. 一步安装（自动检查环境 + 编译 + 装 lark-cli + 写凭证 + 一次性 OAuth）
-python install.py
+python scripts/tools/install.py
 
 # 期间会提示输入:
 #   - App ID (cli_xxx 开头)
@@ -66,19 +66,19 @@ python install.py
 #   - 浏览器完成 OAuth 授权（35 个 scope 一次拿全，**不需要分多次授权**）
 ```
 
-> macOS / Linux 用户：用 `bash setup-all.sh`，但 OAuth 部分需手动跑 `python auth_all.py`。
+> macOS / Linux 用户：用 `bash setup-all.sh`，但 OAuth 部分需手动跑 `python scripts/tools/auth_all.py`。
 
 ### 一键同步飞书 Wiki 树到 Obsidian
 
 ```bash
 # 同步整棵 Wiki 树到你的 Obsidian Vault
-python sync_feishu_to_obsidian.py --wiki "WIKI_TOKEN" --vault "G:/飞书知识库"
+python scripts/core/sync_feishu_to_obsidian.py --wiki "WIKI_TOKEN" --vault "G:/飞书知识库"
 
 # 同步单个文档
-python sync_feishu_to_obsidian.py --doc "DOC_TOKEN" --vault "G:/飞书知识库"
+python scripts/core/sync_feishu_to_obsidian.py --doc "DOC_TOKEN" --vault "G:/飞书知识库"
 
 # 从本地 MD 同步
-python sync_feishu_to_obsidian.py --md "本地.md" --title "标题" --vault "G:/飞书知识库"
+python scripts/core/sync_feishu_to_obsidian.py --md "本地.md" --title "标题" --vault "G:/飞书知识库"
 ```
 
 **完成**！Obsidian 里直接打开 Vault 就能看到所有文档、图片、视频、表格全部对齐飞书。
@@ -97,7 +97,7 @@ feishu-cli doctor       # 6 项健康检查（应输出 "全部通过 ✓"）
 
 ```bash
 # 一步发起 + 浏览器授权 + 轮询
-python auth_all.py
+python scripts/tools/auth_all.py
 
 # 或手动两步
 feishu-cli auth login --no-wait --json --scope "auth:user.id:read docs:... wiki:... drive:... sheets:... (完整 35 个 scope 见 TROUBLESHOOTING.md)"
@@ -127,7 +127,7 @@ lark-cli docs +fetch --doc "KZNxdO5mmobeb9xZvADcgXgcn0d" --as user 2>/dev/null |
   python -c "import json,sys; d=json.load(sys.stdin); open('note.md','w').write(d['data']['markdown'])"
 
 # 3. 转换格式（飞书 URL 编码 → 可点击，<image> → ![]()）
-python feishu2obsidian.py note.md -o ~/ObsidianVault/note.md \
+python scripts/core/feishu2obsidian.py note.md -o ~/ObsidianVault/note.md \
   --title "我的笔记" \
   --source-url "https://feishu.cn/docx/KZNxdO5mmobeb9xZvADcgXgcn0d"
 ```
@@ -155,16 +155,16 @@ tags: [tutorial, feishu]
 
 ```bash
 # 同步整个 vault
-python obsidian2feishu.py ~/Documents/ObsidianVault/Notes/
+python scripts/core/obsidian2feishu.py ~/Documents/ObsidianVault/Notes/
 
 # 单个文件
-python obsidian2feishu.py my-note.md
+python scripts/core/obsidian2feishu.py my-note.md
 
 # 预览
-python obsidian2feishu.py vault/ --dry-run
+python scripts/core/obsidian2feishu.py vault/ --dry-run
 
 # 强制重新同步
-python obsidian2feishu.py vault/ --force
+python scripts/core/obsidian2feishu.py vault/ --force
 ```
 
 同步成功后，frontmatter 会自动加上：
